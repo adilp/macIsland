@@ -16,9 +16,24 @@ first), sticky things stay pinned above transient toasts, and an imminent meetin
 ## Layout
 
 - `Sources/MacIslandCore` — the dependency-free core (domain model, stack controller, source contract, registry,
-  `Alerter`, panel/geometry). **Apple frameworks only, zero third-party runtime dependencies.**
-- `Tests/MacIslandCoreTests` — headless tests at the `SourceHandle` / `NotificationSource` seam.
-- Later tickets add `MacIslandApp` (the `LSUIElement` menu-bar agent) and `MacIslandCLI` (the `macisland` command).
+  `Alerter`, panel/geometry, and the local JSON ingress: wire codec, `SocketSource`, `IngressHost`).
+  **Apple frameworks only, zero third-party runtime dependencies.**
+- `Sources/MacIslandApp` — the `LSUIElement` menu-bar agent (notch panel + boot sequence).
+- `Sources/MacIslandCLI` — the `macisland` command, thin sugar over the ingress socket.
+- `Tests/MacIslandCoreTests` — headless tests at the `SourceHandle` / `NotificationSource` and in-memory
+  `Connection` seams.
+
+## Ingress — push a notification without writing Swift
+
+Any tool can post over a Unix-domain socket (JSONL, both directions). The `macisland` CLI wraps it:
+
+```sh
+echo '{"title":"Build done"}' | macisland notify                 # fire-and-forget toast
+macisland notify --source ci --wait < payload.json               # post, then stream the answer
+macisland revoke pr-42 --source ci                               # or --all
+```
+
+`$MACISLAND_SOCK` overrides the socket path (default `~/Library/Application Support/macIsland/ingress.sock`).
 
 ## Build
 

@@ -140,10 +140,10 @@ Wire schema: [the ingress spec](.scratch/macisland/assets/04-ingress-wire-format
 
 **Blocked by:** Core stack controller + source contract; Actions: openURL, callback routing, dismiss-vs-act.
 
-- [ ] `echo '{"title":"Build done"}' | macisland notify` (and raw JSONL to the socket) posts a card and returns an `ok` ack; `notify` with an existing id upserts in place.
-- [ ] A named `hello` gives a durable namespace re-adopted on reconnect; no `hello` gives an isolated anonymous source; a malformed line returns an `error` ack and the connection survives.
-- [ ] `--wait` streams that notification's `action`/`closed` lines until it closes or times out; `listen` streams all of the source's events; fire-and-forget receives none after exit; callbacks after disconnect are dropped, not queued.
-- [ ] `revoke <id>` is idempotent and `revoke --all` clears only that source's cards; auth is filesystem-perms only (no token, no network); wire codec + `SocketSource` are tested at an in-memory `Connection` seam plus one real-socket smoke test.
+- [x] `echo '{"title":"Build done"}' | macisland notify` (and raw JSONL to the socket) posts a card and returns an `ok` ack; `notify` with an existing id upserts in place.
+- [x] A named `hello` gives a durable namespace re-adopted on reconnect; no `hello` gives an isolated anonymous source; a malformed line returns an `error` ack and the connection survives.
+- [x] `--wait` streams that notification's `action`/`closed` lines until it closes or times out; `listen` streams all of the source's events; fire-and-forget receives none after exit; callbacks after disconnect are dropped, not queued.
+- [x] `revoke <id>` is idempotent and `revoke --all` clears only that source's cards; auth is filesystem-perms only (no token, no network); wire codec + `SocketSource` are tested at an in-memory `Connection` seam plus one real-socket smoke test.
 
 ## Calendar/meeting source
 

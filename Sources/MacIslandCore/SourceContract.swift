@@ -64,6 +64,14 @@ public final class SourceHandle {
     public func revokeAll() {
         target?.revokeAll(from: sourceID)
     }
+
+    /// Whether one of **my** cards with this `value` is currently live. The core is the
+    /// single source of truth here — a source that outlived and re-adopted an earlier
+    /// instance's cards (spec §3) still sees them — so an ingress `revoke` can report an
+    /// accurate `revoked:true/false` ack (wire §7) without keeping its own shadow copy.
+    public func hasCard(_ value: String) -> Bool {
+        target?.hasCard(value: value, from: sourceID) ?? false
+    }
 }
 
 extension Notification {
@@ -90,6 +98,7 @@ protocol SourceHandleTarget: AnyObject {
     func post(_ notification: Notification, from source: SourceID)
     func revoke(value: String, from source: SourceID)
     func revokeAll(from source: SourceID)
+    func hasCard(value: String, from source: SourceID) -> Bool
 }
 
 // MARK: - NotificationSource (source → core: the conformance surface)

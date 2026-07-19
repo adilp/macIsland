@@ -166,6 +166,12 @@ public final class IslandCore: SourceHandleTarget {
         reportClosed(source: source, value: value, reason: .revoked)
     }
 
+    /// Whether a live card `(source, value)` exists — the truth an ingress `revoke`
+    /// ack reads (spec §7), correct even for a re-adopted source's inherited cards.
+    func hasCard(value: String, from source: SourceID) -> Bool {
+        stack.placed(for: NotificationID(source: source, value: value)) != nil
+    }
+
     func revokeAll(from source: SourceID) {
         guard registry[source] != nil else { return }
         let mine = stack.ordered.filter { $0.id.source == source }

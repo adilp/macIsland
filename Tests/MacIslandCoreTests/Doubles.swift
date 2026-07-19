@@ -138,6 +138,76 @@ final class SpySource: NotificationSource {
     }
 }
 
+// MARK: - TestConnection
+
+/// The in-memory `Connection` seam (ticket criterion 4): a test drives client→core
+/// lines with `feed`/`peerClose` and observes the core→client acks/events in
+/// `outgoing` — the wire codec + `SocketSource` are exercised with **no real socket**.
+/// `@MainActor` like everything it wires to; deterministic awaiters (`awaitOutgoing`,
+/// `awaitClosed`) mean no wall-clock waits.
+@MainActor
+final class TestConnection: Connection {
+    private var pendingIncoming: [String] = []
+    private var lineWaiter: CheckedContinuation<String?, Never>?
+    private var peerClosed = false
+    private var localClosed = false
+
+    /// Every core→client line written back, in order (acks then async events).
+    private(set) var outgoing: [String] = []
+    private var outgoingWaiters: [(count: Int, cont: CheckedContinuation<Void, Never>)] = []
+    private(set) var closeCount = 0
+    private var closeWaiters: [CheckedContinuation<Void, Never>] = []
+
+    // --- Test drivers ---
+
+    /// Queue a client→core line for the source's read loop (delivered immediately if
+    /// the loop is already waiting, else buffered until it reads).
+    func feed(_ line: String) {
+        if let waiter = lineWaiter { lineWaiter = nil; waiter.resume(returning: line) }
+        else { pendingIncoming.append(line) }
+    }
+
+    /// Simulate the peer dropping the connection (EOF) → `nextLine` returns nil → the
+    /// source's read loop ends → uniform teardown (spec §5).
+    func peerClose() {
+        peerClosed = true
+        if let waiter = lineWaiter { lineWaiter = nil; waiter.resume(returning: nil) }
+    }
+
+    /// Await until at least `count` lines have been written back.
+    func awaitOutgoing(count: Int) async {
+        if outgoing.count >= count { return }
+        await withCheckedContinuation { outgoingWaiters.append((count, $0)) }
+    }
+
+    /// Await until the source has closed the connection (its `stop()` ran).
+    func awaitClosed() async {
+        if closeCount > 0 { return }
+        await withCheckedContinuation { closeWaiters.append($0) }
+    }
+
+    // --- Connection ---
+
+    func nextLine() async -> String? {
+        if !pendingIncoming.isEmpty { return pendingIncoming.removeFirst() }
+        if peerClosed || localClosed { return nil }
+        return await withCheckedContinuation { lineWaiter = $0 }
+    }
+
+    func write(_ line: String) async {
+        outgoing.append(line)
+        outgoingWaiters.removeAll { if outgoing.count >= $0.count { $0.cont.resume(); return true }; return false }
+    }
+
+    func close() async {
+        closeCount += 1
+        localClosed = true
+        if let waiter = lineWaiter { lineWaiter = nil; waiter.resume(returning: nil) }
+        closeWaiters.forEach { $0.resume() }
+        closeWaiters = []
+    }
+}
+
 // MARK: - OpenSpy
 
 /// Records the URLs an `openURL` action asks the core to open — the spy-audio-style

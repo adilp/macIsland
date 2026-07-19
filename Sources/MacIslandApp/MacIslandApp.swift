@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var instanceGuard: SingleInstanceGuard?
     private var core: IslandCore?
     private var panelController: PanelController?
+    private var ingressHost: IngressHost?
 
     func applicationDidFinishLaunching(_ notification: Foundation.Notification) {
         // Single instance: acquire the lock before doing anything; a second instance
@@ -57,13 +58,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.core = core
         self.panelController = PanelController(core: core)   // step 1: panel → idle pill
         core.register(DevSource())                           // step 4: registry + dev source
+
+        // Step 5 (last): the local JSON ingress. Bind the UDS and start accepting only
+        // now that the core can render — each connection mints a SocketSource (unified
+        // spec §8.4). A bind failure is logged, not fatal: the GUI still runs.
+        let host = IngressHost(core: core)
+        do {
+            try host.start()
+            self.ingressHost = host
+        } catch {
+            Log.lifecycle.error("ingress host failed to start: \(String(describing: error), privacy: .public)")
+        }
     }
 
-    /// Ensure macIsland's Application Support directory exists so the lock file (and,
-    /// later, the ingress socket) can be created there.
+    /// Clean shutdown (unified spec §8.4): stop accepting and unlink the socket file.
+    /// The single-instance lock is released by `SingleInstanceGuard`'s own teardown.
+    func applicationWillTerminate(_ notification: Foundation.Notification) {
+        ingressHost?.stop()
+    }
+
+    /// Ensure macIsland's Application Support directory exists so the lock file and the
+    /// ingress socket can be created there. Created `0700` (user-only) — the ingress
+    /// socket's trust boundary is filesystem permissions alone (spec §8).
     private func createAppSupportDirectory() {
         try? FileManager.default.createDirectory(
-            at: AppSupport.directory, withIntermediateDirectories: true
+            at: AppSupport.directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: NSNumber(value: Int16(0o700))]
         )
     }
 }

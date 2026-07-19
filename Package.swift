@@ -13,7 +13,11 @@ let package = Package(
     ],
     products: [
         .library(name: "MacIslandCore", targets: ["MacIslandCore"]),
-        .executable(name: "MacIslandApp", targets: ["MacIslandApp"])
+        .executable(name: "MacIslandApp", targets: ["MacIslandApp"]),
+        // The `macisland` CLI — thin sugar over the ingress socket (spec §9). Lowercase
+        // product name to avoid a case-only clash with the MacIsland* dirs on a
+        // case-insensitive filesystem.
+        .executable(name: "macisland", targets: ["MacIslandCLI"])
     ],
     targets: [
         // The dependency-free, headless-testable core: the domain model, stack
@@ -38,11 +42,15 @@ let package = Package(
         .testTarget(
             name: "MacIslandCoreTests",
             dependencies: ["MacIslandCore"]
-        )
+        ),
 
-        // Added by a later ticket:
-        //   • MacIslandCLI — .executableTarget, product name `macisland` (avoids a
-        //       case-only clash with the MacIsland* dirs on case-insensitive filesystems)
-        //       → ticket "Local JSON ingress"
+        // The `macisland` CLI: a thin POSIX client that translates each subcommand
+        // (notify/revoke/listen) into the JSONL wire protocol over the ingress socket
+        // (spec §9). Reuses the core's socket-path resolution, UnixSocket, and wire
+        // vocabulary — never a second mechanism.
+        .executableTarget(
+            name: "MacIslandCLI",
+            dependencies: ["MacIslandCore"]
+        )
     ]
 )

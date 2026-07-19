@@ -11,4 +11,15 @@ public enum AppSupport {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/macIsland", isDirectory: true)
     }
+
+    /// The ingress Unix-domain-socket path (ingress spec §8): `$MACISLAND_SOCK` when
+    /// set (and non-empty), else `ingress.sock` in `directory`. Comfortably under
+    /// macOS's ~104-char `sun_path` limit for the default. Resolved once here so the
+    /// host (which binds) and the CLI (which connects) always agree.
+    public static var socketPath: String {
+        if let override = ProcessInfo.processInfo.environment["MACISLAND_SOCK"], !override.isEmpty {
+            return override
+        }
+        return directory.appendingPathComponent("ingress.sock", isDirectory: false).path
+    }
 }
