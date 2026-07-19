@@ -103,10 +103,10 @@ swappable. Verified by asserting ring start/stop at a spy-audio seam; audible ch
 
 **Blocked by:** Core stack controller + source contract.
 
-- [ ] A `.soundOnce` card plays exactly one sound on arrival; a `.silent` card plays nothing.
-- [ ] A `.ringing` card loops until the earliest of card-removed, action-fired, or the 120s timeout (asserted via the injected clock), and never outlives its card.
-- [ ] Two simultaneous ringing cards produce exactly one active ring, owned by the top ringing card; when it ends the channel is free.
-- [ ] Ring start/stop is asserted at a spy-audio seam with no real audio and no wall-clock waits.
+- [x] A `.soundOnce` card plays exactly one sound on arrival; a `.silent` card plays nothing.
+- [x] A `.ringing` card loops until the earliest of card-removed, action-fired, or the 120s timeout (asserted via the injected clock), and never outlives its card.
+- [x] Two simultaneous ringing cards produce exactly one active ring, owned by the top ringing card; when it ends the channel is free.
+- [x] Ring start/stop is asserted at a spy-audio seam with no real audio and no wall-clock waits.
 
 ## Actions: openURL, callback routing, dismiss-vs-act
 

@@ -27,6 +27,10 @@ public final class IslandCore: SourceHandleTarget {
     private var isHovering = false
 
     private let clock: Clock
+    /// The core sound layer, driven from the card lifecycle (spec §8.1). Defaults to
+    /// real system sounds; tests inject one over a spy-audio seam. Sources never touch
+    /// it — the core alone decides what plays from a card's `Alerting` level.
+    private let alerter: Alerter
     /// How an `openURL` action is run — core-run via `NSWorkspace` in production,
     /// injected as a spy at the seam. `openURL` needs no source round-trip and keeps
     /// working even after the owning source is gone (spec §4).
@@ -34,12 +38,16 @@ public final class IslandCore: SourceHandleTarget {
 
     /// - Parameters:
     ///   - clock: the injected time source. Tests pass a hand-advanced fake.
+    ///   - alerter: the sound layer; defaults to real system sounds on the same clock
+    ///     (so the ring timeout shares the core's timeline). Tests inject a spy-audio one.
     ///   - openURL: runs an `openURL` action; defaults to `NSWorkspace`.
     public init(
         clock: Clock,
+        alerter: Alerter? = nil,
         openURL: @escaping @MainActor (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
     ) {
         self.clock = clock
+        self.alerter = alerter ?? Alerter(audio: SystemAudioOutput(), clock: clock)
         self.openURL = openURL
     }
 
@@ -131,6 +139,7 @@ public final class IslandCore: SourceHandleTarget {
         }
         stack.post(notification, receivedAt: clock.now())
         armTimer(for: notification)             // refreshes the countdown on upsert
+        alerter.reconcile(stack.ordered)        // arrival chime / ring channel (spec §8.1)
         notifyChange()
     }
 
@@ -138,6 +147,7 @@ public final class IslandCore: SourceHandleTarget {
         guard registry[source] != nil else { return }
         let id = NotificationID(source: source, value: value)
         guard removeCard(id) != nil else { return }   // idempotent — no-op doesn't re-render
+        alerter.reconcile(stack.ordered)
         notifyChange()
         reportClosed(source: source, value: value, reason: .revoked)
     }
@@ -147,6 +157,7 @@ public final class IslandCore: SourceHandleTarget {
         let mine = stack.ordered.filter { $0.id.source == source }
         guard !mine.isEmpty else { return }
         for card in mine { removeCard(card.id) }
+        alerter.reconcile(stack.ordered)
         notifyChange()
         for card in mine { reportClosed(source: source, value: card.id.value, reason: .revoked) }
     }
@@ -157,6 +168,7 @@ public final class IslandCore: SourceHandleTarget {
     /// revoke; both remove by id, but the reported reason differs (spec §5).
     public func dismiss(_ id: NotificationID) async {
         guard removeCard(id) != nil else { return }
+        alerter.reconcile(stack.ordered)
         notifyChange()
         await reportClosedAwaiting(source: id.source, value: id.value, reason: .dismissed)
     }
@@ -168,6 +180,10 @@ public final class IslandCore: SourceHandleTarget {
         guard let placed = stack.placed(for: id),
               placed.notification.actions.indices.contains(index) else { return }
         let action = placed.notification.actions[index]
+
+        // Firing any action is a ring-ending trigger (spec §8.1: "any action fired"),
+        // whether or not the card is then dismissed.
+        alerter.actionFired(on: id)
 
         switch action.behavior {
         case .openURL(let url):
@@ -182,6 +198,7 @@ public final class IslandCore: SourceHandleTarget {
 
         if action.dismissOnTap {
             guard removeCard(id) != nil else { return }
+            alerter.reconcile(stack.ordered)
             notifyChange()
             await reportClosedAwaiting(source: id.source, value: id.value, reason: .acted)
         }
@@ -236,6 +253,7 @@ public final class IslandCore: SourceHandleTarget {
     private func expire(_ id: NotificationID) async {
         guard timers[id] != nil else { return }        // superseded/cancelled
         guard removeCard(id) != nil else { return }
+        alerter.reconcile(stack.ordered)
         notifyChange()
         await reportClosedAwaiting(source: id.source, value: id.value, reason: .expired)
     }

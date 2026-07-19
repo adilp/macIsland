@@ -147,3 +147,23 @@ final class OpenSpy {
     private(set) var opened: [URL] = []
     func open(_ url: URL) { opened.append(url) }
 }
+
+// MARK: - SpyAudio
+
+/// The spy-audio seam: an `AudioOutput` that records every call instead of touching
+/// `NSSound`, so the whole alerting layer is asserted with **no real audio and no
+/// wall-clock waits** (ticket criterion 4). `ringing` tracks the net channel state so
+/// a test can assert "exactly one active ring" directly.
+@MainActor
+final class SpyAudio: AudioOutput {
+    private(set) var playOnceCount = 0
+    private(set) var startCount = 0
+    private(set) var stopCount = 0
+    /// Whether a ring is currently playing — start sets it, stop clears it. The
+    /// single-channel invariant is "this never needs to represent more than one ring".
+    private(set) var ringing = false
+
+    func playOnce() { playOnceCount += 1 }
+    func startRinging() { startCount += 1; ringing = true }
+    func stopRinging() { stopCount += 1; ringing = false }
+}

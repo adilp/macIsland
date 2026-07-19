@@ -48,9 +48,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // bundle — a packaging step deferred with repo layout (unified spec §9).
         NSApp.setActivationPolicy(.accessory)
 
-        // Boot step 3–4 (steps 1–2 below): the core, then the panel that shows the
-        // idle pill, then the registry with a dev source that posts the demo card.
-        let core = IslandCore(clock: SystemClock())
+        // The core hosts the panel, registry, and Alerter. Its clock and Alerter are
+        // built explicitly so the ring timeout shares the core's timeline and the
+        // Alerter uses real macOS system sounds (unified spec §8.1 / §8.4 step 3).
+        let clock = SystemClock()
+        let alerter = Alerter(audio: SystemAudioOutput(), clock: clock)   // step 3: the sound layer
+        let core = IslandCore(clock: clock, alerter: alerter)
         self.core = core
         self.panelController = PanelController(core: core)   // step 1: panel → idle pill
         core.register(DevSource())                           // step 4: registry + dev source
