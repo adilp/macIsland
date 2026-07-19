@@ -47,6 +47,19 @@ public final class IslandCore: SourceHandleTarget {
     /// the notch. Derived, never stored.
     public var ordered: [PlacedNotification] { stack.ordered }
 
+    /// The transient countdown for a card, sampled now — or `nil` for a sticky card
+    /// (no timer) or an unknown id. The panel reads this per visible card to render
+    /// the thin depleting bar as one Core-Animation animation that freezes on hover
+    /// (unified spec R2). Pure read: never mutates or re-arms anything.
+    public func countdown(for id: NotificationID) -> Countdown? {
+        guard let t = timers[id] else { return nil }
+        // Running: remaining is computed live from the deadline. Paused: the frozen
+        // leftover recorded when hover started (or the full interval for a card that
+        // arrived while hovered). `scheduled == nil` is precisely "paused".
+        let remaining = t.scheduled != nil ? t.liveRemaining(now: clock.now()) : t.remaining
+        return Countdown(total: t.total, remaining: remaining, isPaused: t.scheduled == nil)
+    }
+
     /// The single core→panel render signal — the `stack → panel` edge of the unified
     /// spec's data-flow diagram. Invoked synchronously after any mutation that changes
     /// `ordered` (post/upsert, revoke, revokeAll, dismiss, expire, act), so the panel
@@ -184,8 +197,7 @@ public final class IslandCore: SourceHandleTarget {
         isHovering = hovering
         if hovering {
             for (_, t) in timers where t.scheduled != nil {
-                let remaining = max(0, t.deadline.timeIntervalSince(clock.now()))
-                t.remaining = .seconds(remaining)
+                t.remaining = t.liveRemaining(now: clock.now())   // freeze at what's left
                 t.scheduled?.cancel()
                 t.scheduled = nil
             }
@@ -207,6 +219,7 @@ public final class IslandCore: SourceHandleTarget {
         timers[n.id] = nil
         guard case .transient(let interval) = n.presence else { return }   // sticky → no timer
         let timer = TransientTimer(
+            total: interval,
             remaining: interval,
             deadline: clock.now().addingTimeInterval(interval.timeInterval)
         )
@@ -282,17 +295,27 @@ public final class IslandCore: SourceHandleTarget {
         }
     }
 
-    /// One transient card's auto-dismiss timer. Exactly one of the two fields is
+    /// One transient card's auto-dismiss timer. Exactly one of the two live fields is
     /// authoritative: `deadline` while running (`scheduled != nil`), `remaining`
     /// while paused (`scheduled == nil`) — the split that lets hover freeze and
-    /// resume without losing time.
+    /// resume without losing time. `total` is the immutable full interval, kept so
+    /// `countdown(for:)` can report the bar's 100% width independently of how much
+    /// has since elapsed.
     private final class TransientTimer {
         var scheduled: Scheduled?
         var remaining: Duration
         var deadline: Date
-        init(remaining: Duration, deadline: Date) {
+        let total: Duration
+        init(total: Duration, remaining: Duration, deadline: Date) {
+            self.total = total
             self.remaining = remaining
             self.deadline = deadline
+        }
+
+        /// Time left before the fire, computed live from `deadline` (clamped at 0).
+        /// Authoritative only while running; a paused timer reads `remaining` instead.
+        func liveRemaining(now: Date) -> Duration {
+            .seconds(max(0, deadline.timeIntervalSince(now)))
         }
     }
 }

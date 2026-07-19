@@ -87,10 +87,10 @@ Detail: [the stacking-interaction spec](.scratch/macisland/assets/03-stacking-in
 
 **Blocked by:** A card on the notch (walking skeleton).
 
-- [ ] Posting several cards shows them as one downward-growing sheet; new cards enter top-of-tier with a spring reflow and updates animate in place holding position.
-- [ ] Hovering the island reveals all ✕s at once and pauses every transient countdown (bars freeze); leaving hover resumes them.
-- [ ] Sticky cards render above transient cards with a hairline divider; a sticky card stays pinned on top while transient cards arrive and expire below it.
-- [ ] Beyond ~72% screen height the stack scrolls internally with top/bottom fade edges and the island never runs off-screen; the newest card stays nearest the notch.
+- [x] Posting several cards shows them as one downward-growing sheet; new cards enter top-of-tier with a spring reflow and updates animate in place holding position.
+- [x] Hovering the island reveals all ✕s at once and pauses every transient countdown (bars freeze); leaving hover resumes them.
+- [x] Sticky cards render above transient cards with a hairline divider; a sticky card stays pinned on top while transient cards arrive and expire below it.
+- [x] Beyond ~72% screen height the stack scrolls internally with top/bottom fade edges and the island never runs off-screen; the newest card stays nearest the notch.
 
 ## Alerting & the Alerter
 
