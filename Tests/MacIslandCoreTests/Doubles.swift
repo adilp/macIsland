@@ -1,0 +1,149 @@
+import Foundation
+@testable import MacIslandCore
+
+private typealias Notification = MacIslandCore.Notification
+
+// MARK: - TestClock
+
+/// A hand-advanced fake `Clock`: virtual time only moves when a test calls
+/// `advance(by:)`, which runs every now-due one-shot fire to completion **inline**.
+/// So the whole suite is deterministic and there are no wall-clock sleeps (ticket
+/// "verified … with a fake clock").
+@MainActor
+final class TestClock: Clock {
+    private(set) var current: Date
+    private var pending: [Pending] = []
+
+    init(now: Date = Date(timeIntervalSinceReferenceDate: 0)) { self.current = now }
+
+    func now() -> Date { current }
+
+    func schedule(after interval: Duration, _ fire: @escaping @MainActor () async -> Void) -> Scheduled {
+        let p = Pending(deadline: current.addingTimeInterval(interval.timeInterval), fire: fire)
+        pending.append(p)
+        return p
+    }
+
+    /// Move virtual time forward by `interval`, firing every scheduled action whose
+    /// deadline is now due — in chronological order, awaiting each (so downstream
+    /// `onClosed` reporting has landed by the time this returns). Fires scheduled
+    /// *during* a fire are picked up too.
+    func advance(by interval: Duration) async {
+        let target = current.addingTimeInterval(interval.timeInterval)
+        while let next = pending
+            .filter({ !$0.cancelled && $0.deadline <= target })
+            .min(by: { $0.deadline < $1.deadline }) {
+            current = next.deadline
+            next.cancelled = true                      // one-shot: consume before firing
+            await next.fire()
+        }
+        current = target
+        pending.removeAll { $0.cancelled }
+    }
+
+    /// How many fires are still armed (test introspection — e.g. "quiescent at idle").
+    var armedCount: Int { pending.filter { !$0.cancelled }.count }
+
+    final class Pending: Scheduled {
+        let deadline: Date
+        let fire: @MainActor () async -> Void
+        var cancelled = false
+        init(deadline: Date, fire: @escaping @MainActor () async -> Void) {
+            self.deadline = deadline
+            self.fire = fire
+        }
+        func cancel() { cancelled = true }
+    }
+}
+
+// MARK: - SpySource
+
+enum SpyError: Error { case boom }
+
+/// A `NotificationSource` that records every core→source callback and lets a test
+/// await them deterministically. `@MainActor` (so it's `Sendable` and its records
+/// are race-free); flags make any callback throw, to exercise fault containment.
+@MainActor
+final class SpySource: NotificationSource {
+    let id: SourceID
+    let revokeOnDisconnect: Bool
+
+    private(set) var startCount = 0
+    private(set) var stopCount = 0
+    private(set) var closed: [(value: String, reason: CloseReason)] = []
+    private(set) var actions: [(value: String, actionID: String)] = []
+
+    var throwOnStart = false
+    var throwOnClosed = false
+    var throwOnAction = false
+    var throwOnStop = false
+
+    private var closedWaiters: [(count: Int, cont: CheckedContinuation<Void, Never>)] = []
+    private var actionWaiters: [(count: Int, cont: CheckedContinuation<Void, Never>)] = []
+    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(_ id: String, revokeOnDisconnect: Bool = false) {
+        self.id = SourceID(raw: id)
+        self.revokeOnDisconnect = revokeOnDisconnect
+    }
+
+    func start(_ handle: SourceHandle) async throws {
+        startCount += 1
+        if throwOnStart { throw SpyError.boom }
+    }
+
+    func onAction(_ value: String, _ actionID: String) async throws {
+        actions.append((value, actionID))
+        signalActions()
+        if throwOnAction { throw SpyError.boom }
+    }
+
+    func onClosed(_ value: String, reason: CloseReason) async throws {
+        closed.append((value, reason))
+        signalClosed()
+        if throwOnClosed { throw SpyError.boom }
+    }
+
+    func stop() async throws {
+        stopCount += 1
+        signalStop()
+        if throwOnStop { throw SpyError.boom }
+    }
+
+    // Deterministic awaiters — return once the target count of events has landed.
+    func awaitClosed(count: Int) async {
+        if closed.count >= count { return }
+        await withCheckedContinuation { closedWaiters.append((count, $0)) }
+    }
+
+    func awaitActions(count: Int) async {
+        if actions.count >= count { return }
+        await withCheckedContinuation { actionWaiters.append((count, $0)) }
+    }
+
+    func awaitStopped() async {
+        if stopCount > 0 { return }
+        await withCheckedContinuation { stopWaiters.append($0) }
+    }
+
+    private func signalClosed() {
+        closedWaiters.removeAll { if closed.count >= $0.count { $0.cont.resume(); return true }; return false }
+    }
+    private func signalActions() {
+        actionWaiters.removeAll { if actions.count >= $0.count { $0.cont.resume(); return true }; return false }
+    }
+    private func signalStop() {
+        stopWaiters.forEach { $0.resume() }
+        stopWaiters = []
+    }
+}
+
+// MARK: - OpenSpy
+
+/// Records the URLs an `openURL` action asks the core to open — the spy-audio-style
+/// seam for action routing, so no real `NSWorkspace` call happens in tests.
+@MainActor
+final class OpenSpy {
+    private(set) var opened: [URL] = []
+    func open(_ url: URL) { opened.append(url) }
+}

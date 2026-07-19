@@ -1,0 +1,15 @@
+# Swift Package Manager
+.build/
+Package.resolved
+.swiftpm/
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+
+# macOS
+.DS_Store
+
+# Stray local sockets (the ingress socket lives in ~/Library/Application Support, not here)
+*.sock

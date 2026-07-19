@@ -1,0 +1,33 @@
+# macIsland
+
+A light, dependency-free, open-source macOS **dynamic-island notifier** — an always-resident pill at the notch
+that unrolls downward into a per-row-dismissible **stack** of notification cards, fed by a built-in **Calendar**
+source and a **local JSON ingress** any tool can write to. Notifications coexist (a second alert never erases the
+first), sticky things stay pinned above transient toasts, and an imminent meeting rings with a one-click Join.
+
+> **Status:** greenfield build. The design is locked; the work is sliced into tracer-bullet tickets.
+
+## Where things are
+
+- **Build backlog:** [`tickets.md`](tickets.md) — work the frontier one ticket at a time with `/implement`.
+- **Design (source of truth):** [`.scratch/macisland/assets/08-unified-design-architecture-spec.md`](.scratch/macisland/assets/08-unified-design-architecture-spec.md) and the seven section-specs it links.
+- **Build spec:** [`.scratch/macisland/issues/spec-build-macisland-v1.md`](.scratch/macisland/issues/spec-build-macisland-v1.md) (scope, user stories, test seams).
+
+## Layout
+
+- `Sources/MacIslandCore` — the dependency-free core (domain model, stack controller, source contract, registry,
+  `Alerter`, panel/geometry). **Apple frameworks only, zero third-party runtime dependencies.**
+- `Tests/MacIslandCoreTests` — headless tests at the `SourceHandle` / `NotificationSource` seam.
+- Later tickets add `MacIslandApp` (the `LSUIElement` menu-bar agent) and `MacIslandCLI` (the `macisland` command).
+
+## Build
+
+Requires **macOS 14+ (Sonoma)**.
+
+```sh
+swift build
+swift test
+```
+
+_This README is a minimal orientation stub — the full README shape is deliberately deferred (see the build spec's
+Out of Scope)._
