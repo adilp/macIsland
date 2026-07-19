@@ -69,10 +69,10 @@ dev source posts a card so the skeleton is demoable. Geometry: [the notch/window
 
 **Blocked by:** Core stack controller + source contract.
 
-- [ ] Launching the app shows the idle pill at the notch and a menu-bar item whose only entry (Quit) exits cleanly.
-- [ ] A card posted by the dev source appears at the notch, sitting visually continuous with the notch, and clicking its ✕ removes it.
-- [ ] The panel floats above full-screen apps and never steals key/main focus from the frontmost app.
-- [ ] On a non-notched display the island renders as a floating top-center pill; the island stays on the built-in display and re-anchors on `didChangeScreenParametersNotification`.
+- [x] Launching the app shows the idle pill at the notch and a menu-bar item whose only entry (Quit) exits cleanly.
+- [x] A card posted by the dev source appears at the notch, sitting visually continuous with the notch, and clicking its ✕ removes it.
+- [x] The panel floats above full-screen apps and never steals key/main focus from the frontmost app.
+- [x] On a non-notched display the island renders as a floating top-center pill; the island stays on the built-in display and re-anchors on `didChangeScreenParametersNotification`.
 - [x] Only one instance can run at a time; pure notch-geometry/anchor functions are unit-tested against notched, non-notched, and external-screen rects.
 
 ## Full stacking interaction ("Calm sheet")

@@ -13,12 +13,15 @@ final class PanelController {
     private let core: IslandCore
     private let panel = IslandPanel()
     private let hostingView: NSHostingView<IslandView>
+    /// The first render (boot idle pill) snaps into place; later renders animate the
+    /// window resize so cards appearing/dismissing don't jump.
+    private var hasRendered = false
 
     init(core: IslandCore) {
         self.core = core
         // A placeholder rootView; `render()` replaces it with the real snapshot.
         hostingView = NSHostingView(rootView: IslandView(
-            cards: [], width: 300, topInset: 0, onDismiss: { _ in }
+            cards: [], width: 300, topInset: 0, hasNotch: false, onDismiss: { _ in }
         ))
         panel.contentView = hostingView
 
@@ -55,22 +58,37 @@ final class PanelController {
             cards: core.ordered,
             width: width,
             topInset: topInset,
+            hasNotch: metrics.hasNotch,
             onDismiss: { [weak self] id in
                 Task { await self?.core.dismiss(id) }
             }
         )
         hostingView.layoutSubtreeIfNeeded()
 
-        let size = CGSize(width: width, height: hostingView.fittingSize.height)
-        panel.setFrame(anchorFrame(islandSize: size, on: metrics), display: true)
+        // Size to the full padded content (card + shadow margins), not just the card,
+        // so the shadow isn't clipped at the window edge.
+        let frame = anchorFrame(islandSize: hostingView.fittingSize, on: metrics)
+        if hasRendered {
+            // Animate the resize so a card arriving/leaving grows/shrinks the panel
+            // in step with the SwiftUI enter/exit transition (spec §5: motion only
+            // during transitions, then quiescent).
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.32
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                panel.animator().setFrame(frame, display: true)
+            }
+        } else {
+            panel.setFrame(frame, display: true)   // boot: snap the idle pill in place
+            hasRendered = true
+        }
     }
 
     /// Island width: a base pill width, widened to at least the notch width (plus a
     /// small hug margin) so the sheet visually emerges from the notch (spec §4).
     private func islandWidth(for metrics: ScreenMetrics) -> CGFloat {
-        let base: CGFloat = 320
+        let base: CGFloat = 440
         guard let notch = metrics.notchWidth else { return base }
-        return max(base, notch + 24)
+        return max(base, notch + 40)
     }
 
     /// Top space reserved so card content clears the physical notch band; a small
