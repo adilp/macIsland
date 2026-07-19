@@ -59,6 +59,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.panelController = PanelController(core: core)   // step 1: panel → idle pill
         core.register(DevSource())                           // step 4: registry + dev source
 
+        // Step 4 (cont.): the built-in Calendar source — one launch-lifetime source
+        // registered after the panel exists (unified spec §8.4 / §5). It shares the
+        // core's clock so its meeting timers and the ring timeout live on one timeline;
+        // EventKit access is auto-requested on first launch and it stays inert if denied
+        // (Calendar spec §2). `EventKitStore` is the real EventKit seam.
+        core.register(CalendarSource(store: EventKitStore(), clock: clock))
+
         // Step 5 (last): the local JSON ingress. Bind the UDS and start accepting only
         // now that the core can render — each connection mints a SocketSource (unified
         // spec §8.4). A bind failure is logged, not fatal: the GUI still runs.

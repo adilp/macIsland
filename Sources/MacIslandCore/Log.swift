@@ -17,4 +17,6 @@ public enum Log {
     public static let lifecycle = Logger(subsystem: subsystem, category: "lifecycle")
     /// The local JSON ingress — socket bind/accept, per-connection sources, wire faults.
     public static let ingress = Logger(subsystem: subsystem, category: "ingress")
+    /// The built-in Calendar source — EventKit access, meeting scheduling, self-revoke.
+    public static let calendar = Logger(subsystem: subsystem, category: "calendar")
 }

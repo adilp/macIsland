@@ -160,10 +160,10 @@ it looks ahead 24h. Ports `CalendarService`/`LinkParser`/`MeetingEvent` from the
 
 **Blocked by:** Alerting & the Alerter; Actions: openURL, callback routing, dismiss-vs-act.
 
-- [ ] With a fake `EventStore` + injected clock, every timed meeting posts a T‑5 transient+soundOnce card; a video meeting upserts (same event id) into a sticky+ringing Join card at T‑1; a non-video meeting posts only T‑5.
-- [ ] The ring stops at the earliest of Join, dismiss, revoke, or 120s; the sticky card self-revokes at `endDate` and on calendar edit.
-- [ ] Dismissing the T‑5 warning cancels the pending ring; letting it expire lets the ring fire; the Join action opens the parsed video URL.
-- [ ] On first launch EventKit access is requested; when denied the source is inert (posts nothing) and the rest of the app is unaffected; deployment target is macOS 14.
+- [x] With a fake `EventStore` + injected clock, every timed meeting posts a T‑5 transient+soundOnce card; a video meeting upserts (same event id) into a sticky+ringing Join card at T‑1; a non-video meeting posts only T‑5.
+- [x] The ring stops at the earliest of Join, dismiss, revoke, or 120s; the sticky card self-revokes at `endDate` and on calendar edit.
+- [x] Dismissing the T‑5 warning cancels the pending ring; letting it expire lets the ring fire; the Join action opens the parsed video URL.
+- [x] On first launch EventKit access is requested; when denied the source is inert (posts nothing) and the rest of the app is unaffected; deployment target is macOS 14.
 
 ## Performance harness & budget verification
 
