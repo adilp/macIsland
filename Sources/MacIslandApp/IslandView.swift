@@ -39,8 +39,16 @@ struct IslandView: View {
     /// the chrome it owns (notch clearance + its margins). `nil` = content-sized, no
     /// scroll (the common case), so the panel stays measurable at its natural height.
     let panelMaxHeight: CGFloat?
+    /// The ids of every live (registered) source. A `callback` button on a card whose
+    /// source is *not* here is disabled (its source is gone, so it would fire into
+    /// nothing); `openURL` buttons stay live regardless — the orphan policy, made
+    /// visible (spec §5).
+    let liveSources: Set<SourceID>
     /// Dismiss a card by id — wired to `IslandCore.dismiss` (the always-present ✕).
     let onDismiss: (NotificationID) -> Void
+    /// Fire the action at `index` on a card — wired to `IslandCore.fireAction`. The
+    /// core runs `openURL` itself and routes `callback` to the owning source.
+    let onAction: (NotificationID, Int) -> Void
     /// Report island-hover up to the controller → `IslandCore.setHovering`.
     let onHoverChange: (Bool) -> Void
 
@@ -149,7 +157,9 @@ struct IslandView: View {
                     card: card,
                     countdown: countdowns[card.id],
                     revealDismiss: isHovering,
-                    onDismiss: onDismiss
+                    sourceIsLive: liveSources.contains(card.id.source),
+                    onDismiss: onDismiss,
+                    onAction: onAction
                 )
                 .transition(.asymmetric(
                     insertion: .push(from: .top).combined(with: .opacity),
@@ -204,9 +214,18 @@ private struct CardRow: View {
     let countdown: Countdown?
     /// Whether the island is hovered — reveals the ✕ (all cards' ✕s appear together).
     let revealDismiss: Bool
+    /// Whether this card's source is still registered. A `callback` button is disabled
+    /// when it isn't (the orphan policy: it would fire into nothing); `openURL` buttons
+    /// ignore this — the core runs them itself, so they survive a dead source (spec §5).
+    let sourceIsLive: Bool
     let onDismiss: (NotificationID) -> Void
+    /// Fire the action at `index` on this card (0 = primary).
+    let onAction: (NotificationID, Int) -> Void
 
     private var content: Content { card.notification.content }
+    /// Up to two, in display order — the domain model caps the array at 2 and the core
+    /// rejects any post that exceeds it, so this is structurally ≤ 2 buttons.
+    private var actions: [Action] { card.notification.actions }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -229,12 +248,45 @@ private struct CardRow: View {
                 Spacer(minLength: 10)
                 dismissButton
             }
+            if !actions.isEmpty {
+                actionRow
+            }
             if let countdown {
                 CountdownBar(countdown: countdown)
             }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 13)
+    }
+
+    // The card's 0…2 action buttons, primary (index 0) first — plus the dismiss ✕,
+    // which lives in the header and is never modelled as an `Action`. A `callback`
+    // button greys out and stops responding once its source is gone; an `openURL`
+    // button never does (spec §5 orphan policy).
+    private var actionRow: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
+                ActionButton(
+                    label: action.label,
+                    isPrimary: index == 0,
+                    isEnabled: isEnabled(action)
+                ) {
+                    onAction(card.id, index)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// An `openURL` action is always live (core-run); a `callback` action is live only
+    /// while its owning source is registered. This gate is *advisory* — the core
+    /// re-checks at fire time, so a callback into a source that vanished between render
+    /// and tap is a harmless no-op there (see `IslandCore.liveSourceIDs`).
+    private func isEnabled(_ action: Action) -> Bool {
+        switch action.behavior {
+        case .openURL: return true
+        case .callback: return sourceIsLive
+        }
     }
 
     // Large, high-contrast, easy to flick to and hit (spec §3) — but hidden until the
@@ -280,6 +332,46 @@ private struct CardRow: View {
 
     private var fallbackIcon: some View {
         Image(systemName: "bell.fill").font(.system(size: 18)).opacity(0.8)
+    }
+}
+
+/// One action button on a card. The primary (first) action reads as filled; a
+/// secondary action is a quieter outline. A disabled button — a `callback` whose
+/// source is gone — greys out and stops responding, the visible half of the orphan
+/// policy (spec §5). Tapping calls back up to `IslandCore.fireAction`.
+private struct ActionButton: View {
+    let label: String
+    let isPrimary: Bool
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+                .foregroundStyle(foreground)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(background)
+                .clipShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)               // `.disabled` already blocks hit testing
+        .opacity(isEnabled ? 1 : 0.4)
+    }
+
+    private var foreground: Color {
+        isPrimary ? .black : .white
+    }
+
+    @ViewBuilder
+    private var background: some View {
+        if isPrimary {
+            Capsule(style: .continuous).fill(.white.opacity(0.92))
+        } else {
+            Capsule(style: .continuous).fill(.white.opacity(0.12))
+        }
     }
 }
 

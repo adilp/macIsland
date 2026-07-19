@@ -37,7 +37,8 @@ final class PanelController {
         // Placeholder rootViews; `render()` replaces them with the real snapshot.
         let placeholder = IslandView(
             cards: [], countdowns: [:], width: 300, topInset: 0, hasNotch: false,
-            isHovering: false, panelMaxHeight: nil, onDismiss: { _ in }, onHoverChange: { _ in }
+            isHovering: false, panelMaxHeight: nil, liveSources: [],
+            onDismiss: { _ in }, onAction: { _, _ in }, onHoverChange: { _ in }
         )
         hostingView = NSHostingView(rootView: placeholder)
         measuringView = NSHostingView(rootView: placeholder)
@@ -123,8 +124,12 @@ final class PanelController {
             hasNotch: metrics.hasNotch,
             isHovering: isHovering,
             panelMaxHeight: panelMaxHeight,
+            liveSources: core.liveSourceIDs,
             onDismiss: { [weak self] id in
                 Task { await self?.core.dismiss(id) }
+            },
+            onAction: { [weak self] id, index in
+                Task { await self?.core.fireAction(id, at: index) }
             },
             onHoverChange: { [weak self] hovering in
                 self?.hoverChanged(hovering)

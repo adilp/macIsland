@@ -120,10 +120,10 @@ is reported through `onClosed` with the right `CloseReason`. Routing detail: [th
 
 **Blocked by:** Core stack controller + source contract; A card on the notch (walking skeleton).
 
-- [ ] A card shows up to two buttons; clicking an `openURL` action opens the URL and (by default) dismisses, reporting `onClosed(.acted)`.
-- [ ] Clicking a `callback` action calls the owning source's `onAction(value, actionID)`; a `dismissOnTap:false` action keeps the card for an in-place update.
-- [ ] After a source is torn down, its cards remain, its `callback` buttons are disabled, and its `openURL` buttons still work; a `revokeOnDisconnect` source's cards auto-revoke.
-- [ ] Dismiss, revoke, expire, and act each report the correct `CloseReason` through `onClosed` — asserted at the `SourceHandle` seam.
+- [x] A card shows up to two buttons; clicking an `openURL` action opens the URL and (by default) dismisses, reporting `onClosed(.acted)`.
+- [x] Clicking a `callback` action calls the owning source's `onAction(value, actionID)`; a `dismissOnTap:false` action keeps the card for an in-place update.
+- [x] After a source is torn down, its cards remain, its `callback` buttons are disabled, and its `openURL` buttons still work; a `revokeOnDisconnect` source's cards auto-revoke.
+- [x] Dismiss, revoke, expire, and act each report the correct `CloseReason` through `onClosed` — asserted at the `SourceHandle` seam.
 
 ## Local JSON ingress (wire codec + IngressHost + SocketSource + CLI)
 

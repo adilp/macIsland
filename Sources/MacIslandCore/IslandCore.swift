@@ -55,6 +55,20 @@ public final class IslandCore: SourceHandleTarget {
     /// the notch. Derived, never stored.
     public var ordered: [PlacedNotification] { stack.ordered }
 
+    /// The ids of every currently-registered (live) source. The panel reads this to
+    /// enforce the orphan policy visually: a `callback` button on a card whose source
+    /// is **not** in this set is disabled (it would fire into nothing), while `openURL`
+    /// buttons — core-run — stay live regardless (spec §5). A card's `id.source` in
+    /// this set means its callbacks still route.
+    ///
+    /// This is **advisory**, not load-bearing for safety: it is a snapshot the panel
+    /// samples at render time, so a source can be torn down between render and tap.
+    /// The authoritative check is at fire time — `fireAction` re-resolves
+    /// `id.source → registry` and a callback into a vanished source is a logged no-op.
+    /// So the disabled state is purely to avoid offering a dead button, never the thing
+    /// that prevents a bad route.
+    public var liveSourceIDs: Set<SourceID> { Set(registry.keys) }
+
     /// The transient countdown for a card, sampled now — or `nil` for a sticky card
     /// (no timer) or an unknown id. The panel reads this per visible card to render
     /// the thin depleting bar as one Core-Animation animation that freezes on hover
