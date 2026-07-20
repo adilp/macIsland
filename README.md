@@ -23,6 +23,12 @@ first), sticky things stay pinned above transient toasts, and an imminent meetin
 - `Tests/MacIslandCoreTests` — headless tests at the `SourceHandle` / `NotificationSource` and in-memory
   `Connection` seams.
 
+## Performance
+
+"Performant and light" is a gated goal, not a vibe: idle memory ceiling, a no-leak churn check, and the
+quiescent-at-idle / snap-back invariants fail CI on regression. See [`PERFORMANCE.md`](PERFORMANCE.md) for the
+budget, the automated gates, and the manual pre-release idle-quiescence procedure.
+
 ## Ingress — push a notification without writing Swift
 
 Any tool can post over a Unix-domain socket (JSONL, both directions). The `macisland` CLI wraps it:

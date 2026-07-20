@@ -31,6 +31,11 @@ final class PanelController {
     /// Mirror of the hover state we last pushed to the core — so a stream of
     /// `onContinuousHover` movement events only does work when it actually flips.
     private var isHovering = false
+    /// Brackets each animated panel resize with an `os_signpost` interval, so the
+    /// active budget is measurable: frame smoothness across the transition (Instruments
+    /// Animation Hitches / `XCTOSSignpostMetric`, perf spec §5.1) and the snap-back
+    /// invariant (no interval left open once the animation completes, I‑2).
+    private let signposter = TransitionSignposter()
 
     init(core: IslandCore) {
         self.core = core
@@ -99,12 +104,17 @@ final class PanelController {
         if hasRendered {
             // Animate the resize so a card arriving/leaving grows/shrinks the panel
             // in step with the SwiftUI enter/exit transition (spec §5: motion only
-            // during transitions, then quiescent).
-            NSAnimationContext.runAnimationGroup { ctx in
+            // during transitions, then quiescent). The signpost interval brackets the
+            // animation so its smoothness is measurable and the completion proves the
+            // snap-back (interval closed ⇒ nothing left animating — I‑2).
+            let token = signposter.begin()
+            NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = 0.32
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 panel.animator().setFrame(frame, display: true)
-            }
+            }, completionHandler: { [weak self] in
+                self?.signposter.end(token)
+            })
         } else {
             panel.setFrame(frame, display: true)   // boot: snap the idle pill in place
             hasRendered = true

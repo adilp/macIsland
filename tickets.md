@@ -178,7 +178,7 @@ single Core-Animation animation, not a per-frame loop) and snaps back to quiesce
 
 **Blocked by:** Full stacking interaction ("Calm sheet"); Local JSON ingress (wire codec + IngressHost + SocketSource + CLI); Calendar/meeting source.
 
-- [ ] CI fails on regression for the idle-memory ceiling and the no-leak churn check (memory returns to baseline after fire+dismiss of many notifications).
-- [ ] CI checks animation smoothness across a transition (no hitches) via signpost metrics.
-- [ ] The manual idle-quiescence procedure is documented and, run once, shows 0.0% CPU and ~0 periodic wakeups at idle; the automation TODO is logged.
-- [ ] Verified: no display-link/repeating timer at idle, and CPU returns to the idle floor immediately after each transition (snap-back).
+- [x] CI fails on regression for the idle-memory ceiling and the no-leak churn check (memory returns to baseline after fire+dismiss of many notifications).
+- [ ] CI checks animation smoothness across a transition (no hitches) via signpost metrics. <!-- DONE: signpost instrumentation shipped + CI-gated transition/snap-back interval contract. PENDING: frame-level hitch analysis (XCTOSSignpostMetric) needs the XCTest UI-testing bundle + window server, which SwiftPM can't host — ready UI test + Instruments procedure in PERFORMANCE.md §Deferred automation, promoted once the Xcode UI-test host lands -->
+- [ ] The manual idle-quiescence procedure is documented and, run once, shows 0.0% CPU and ~0 periodic wakeups at idle; the automation TODO is logged. <!-- documented + automation TODO logged (PERFORMANCE.md); run-once measurement is a maintainer pre-release step (needs sudo powermetrics on a quiet machine) — not yet run -->
+- [x] Verified: no display-link/repeating timer at idle, and CPU returns to the idle floor immediately after each transition (snap-back).

@@ -1,0 +1,72 @@
+name: CI
+
+# Build + test on every push and PR. The performance & idle-cost budget's automatable
+# half (perf spec §5.1) is gated here — CI fails the build on a regression of the
+# idle-memory ceiling, the no-leak churn check, or the transition (snap-back /
+# animation-instrumentation) invariants. The budget CI cannot measure reliably — idle
+# 0.0% CPU via `powermetrics` — stays the documented manual pre-release check
+# (PERFORMANCE.md §"Manual idle-quiescence check"); the frame-level animation-hitch
+# gate awaits the windowed UI-test host (PERFORMANCE.md §"Deferred automation").
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & unit tests
+    # macOS 14 (Sonoma) — the project's min deployment target (spec §8.2).
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: swift build -v
+      - name: Test (full suite)
+        run: swift test
+
+  performance-budget:
+    name: Performance budget gates
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      # The reliably-CI-measurable budgets (spec §5.1), run as their own required check
+      # so a regression is attributed to the performance contract, not a generic test
+      # failure:
+      #   • idle-memory ceiling (≤100 MB phys footprint)
+      #   • no-leak churn (memory returns to baseline after fire+dismiss of many cards)
+      #   • quiescent-at-idle (I‑1) and snap-back after every transition (I‑2)
+      - name: Idle-memory ceiling, no-leak churn, quiescence & snap-back
+        run: swift test --filter PerformanceBudgetTests
+      # The active-budget instrumentation contract: transition intervals are balanced
+      # and leave nothing running once a transition ends (the headlessly-testable half
+      # of the animation-smoothness budget; the frame-level hitch gate is the deferred
+      # windowed check — see PERFORMANCE.md).
+      - name: Animation-transition instrumentation (snap-back)
+        run: swift test --filter TransitionSignposterTests
+      # The authoritative idle-memory ceiling against the REAL resident app process
+      # (spec §5.1: "Launch, settle, assert phys footprint under ceiling"). The headless
+      # test above only guards the core target; this launches MacIslandApp and reads its
+      # phys footprint via `vmmap`. Requires the runner's window server (GitHub's
+      # macos-14 image provides one); fails the build if the app is over ceiling or
+      # cannot launch.
+      - name: Idle-memory ceiling (real app process)
+        run: CEILING_MB=100 SETTLE_SECS=10 ./Scripts/idle-memory-check.sh
+
+  # ── Deferred automation (perf spec §5.3) ─────────────────────────────────────────
+  # Two budgets cannot be gated on shared CI runners and stay documented manual/pending
+  # checks until a dedicated, quiet, self-hosted macOS runner with a window server and
+  # `sudo powermetrics` exists:
+  #   1. Idle quiescence (0.0% CPU, ~0 periodic wakeups) — `powermetrics` needs root and
+  #      a noise-free machine (PERFORMANCE.md §"Manual idle-quiescence check").
+  #   2. Frame-level animation hitches across an expand/collapse — needs the XCTest
+  #      UI-testing bundle + window server (PerformanceUITests/AnimationHitchUITests.swift,
+  #      PERFORMANCE.md §"Deferred automation").
+  # TODO: once that runner exists, promote both into gating jobs here.
