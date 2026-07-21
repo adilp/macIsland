@@ -61,7 +61,8 @@ public final class ModuleRegistry {
     }
 
     /// The live actions for a row (empty when disabled) — the App renders each as a button.
-    public func actions(of id: SourceID) -> [ModuleAction] { active[id]?.actions ?? [] }
+    /// Re-read on demand so a status-dependent action (e.g. "Connect…") appears/disappears.
+    public func actions(of id: SourceID) -> [ModuleAction] { active[id]?.actions() ?? [] }
 
     private func enable(_ module: Module) {
         let a = module.activate()

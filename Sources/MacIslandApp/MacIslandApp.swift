@@ -134,7 +134,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             return ActiveModule(
                 source: src,
                 status: { src.authorizationStatus == .authorized ? .ok : .needsAttention("Not connected") },
-                actions: [ModuleAction("Connect Calendar…") { _ = await src.requestAccess() }]
+                // The Connect affordance only makes sense until access is granted — once
+                // authorized it's a dead button, so it disappears and the light shows OK.
+                actions: {
+                    src.authorizationStatus == .authorized
+                        ? []
+                        : [ModuleAction("Connect Calendar…") { _ = await src.requestAccess() }]
+                }
             )
         }
     }

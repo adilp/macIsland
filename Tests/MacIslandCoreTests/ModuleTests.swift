@@ -35,8 +35,20 @@ final class ModuleTests: XCTestCase {
                        icon: .symbol("cloud.rain"), makeSource: { SpySource("weather") })
         let active = m.activate()
         XCTAssertEqual(active.status(), .ok, "trivial module is healthy by default")
-        XCTAssertTrue(active.actions.isEmpty)
+        XCTAssertTrue(active.actions().isEmpty)
         XCTAssertEqual(active.source.id, SourceID(raw: "weather"))
+    }
+
+    func test_actions_reReadLiveState() {
+        var connected = false
+        let m = Module(id: SourceID(raw: "c"), displayName: "C", icon: .symbol("calendar")) {
+            ActiveModule(source: SpySource("c"),
+                         actions: { connected ? [] : [ModuleAction("Connect") {}] })
+        }
+        let active = m.activate()
+        XCTAssertEqual(active.actions().count, 1, "shows Connect while not connected")
+        connected = true
+        XCTAssertTrue(active.actions().isEmpty, "action list re-reads live state, hides once connected")
     }
 
     func test_activate_buildsAFreshSourceEachTime() {

@@ -44,11 +44,14 @@ public struct ModuleAction: Identifiable {
 public struct ActiveModule {
     public let source: any NotificationSource
     public let status: @MainActor () -> ModuleStatus
-    public let actions: [ModuleAction]
+    /// A closure, not a stored array, so actions can track live state the same way `status`
+    /// does — e.g. a "Connect…" button that vanishes once the source is authorized. Read on
+    /// menu-open alongside the status light.
+    public let actions: @MainActor () -> [ModuleAction]
 
     public init(source: any NotificationSource,
                 status: @escaping @MainActor () -> ModuleStatus = { .ok },
-                actions: [ModuleAction] = []) {
+                actions: @escaping @MainActor () -> [ModuleAction] = { [] }) {
         self.source = source
         self.status = status
         self.actions = actions
