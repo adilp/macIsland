@@ -194,7 +194,7 @@ public final class GitHubActionsSource: NotificationSource {
     private func resolveTerminal(_ run: RunSnapshot, now: Date) {
         switch run.conclusion {
         case .success:
-            postSuccessFlash(run)
+            postSuccessCard(run)
         case .failure:
             postFailureCard(run, now: now)
         case .quiet, .none:
@@ -205,12 +205,14 @@ public final class GitHubActionsSource: NotificationSource {
     // MARK: - Card mapping
 
     /// A running deploy → a pill activity: glyph + live clock, tappable "Open run".
+    /// The action is `dismissOnTap: false` so opening the run in the browser doesn't
+    /// dismiss the activity — it keeps tracking until the deploy actually finishes.
     private func postActivity(_ run: RunSnapshot) {
         handle?.post(
             Content(title: run.workflowName, body: "\(run.branch) · \(run.shortSHA)",
                     icon: .symbol(Self.runningGlyph)),
             value: value(runID: run.id),
-            actions: [Action(label: "Open run", behavior: .openURL(run.htmlURL))],
+            actions: [Action(label: "Open run", behavior: .openURL(run.htmlURL), dismissOnTap: false)],
             presence: .sticky,
             alerting: .silent,
             activity: ActivityStyle(
@@ -221,30 +223,33 @@ public final class GitHubActionsSource: NotificationSource {
         )
     }
 
-    /// Success → the same activity flashes green and auto-collapses (transient),
-    /// keeping it briefly in the pill as the confirmation.
-    private func postSuccessFlash(_ run: RunSnapshot) {
+    /// Success → a **persistent** completion card: it leaves the pill (no activity
+    /// style → enters the stack), turns green, and stays until you dismiss it — so a
+    /// finished deploy is still there when you come back. Silent (success isn't urgent;
+    /// failure is the one that rings). "Open run" is `dismissOnTap: false`; only the ✕
+    /// removes it.
+    private func postSuccessCard(_ run: RunSnapshot) {
         handle?.post(
-            Content(title: run.workflowName, body: "deployed", icon: .symbol(Self.successGlyph),
-                    tint: Self.successTint),
+            Content(title: "\(run.workflowName) deployed", body: "\(run.branch) · \(run.shortSHA)",
+                    icon: .symbol(Self.successGlyph), tint: Self.successTint),
             value: value(runID: run.id),
-            presence: .transient(after: .seconds(2)),
-            alerting: .silent,
-            activity: ActivityStyle(glyph: .symbol(Self.successGlyph), trailing: "done", noun: "deploy")
+            actions: [Action(label: "Open run", behavior: .openURL(run.htmlURL), dismissOnTap: false)],
+            presence: .sticky,
+            alerting: .silent
         )
     }
 
-    /// Failure → hand off to the notification layer: an upsert to a sticky card with
-    /// **no** activity style (so it leaves the pill and enters the stack), a red tint,
-    /// an "Open run" action, and a ring — unless the failure is stale (finished long
-    /// ago, e.g. while asleep), in which case it lands silently.
+    /// Failure → the same persistent hand-off to the notification layer: an upsert to a
+    /// sticky card with **no** activity style (leaves the pill, enters the stack), a red
+    /// tint, "Open run" (`dismissOnTap: false`), and a ring — unless the failure is
+    /// stale (finished long ago, e.g. while asleep), in which case it lands silently.
     private func postFailureCard(_ run: RunSnapshot, now: Date) {
         let stale = run.completedAt.map { now.timeIntervalSince($0) > config.freshness.timeInterval } ?? false
         handle?.post(
             Content(title: "\(run.workflowName) failed", body: "\(run.branch) · \(run.shortSHA)",
                     icon: .symbol(Self.failureGlyph), tint: Self.failureTint),
             value: value(runID: run.id),
-            actions: [Action(label: "Open run", behavior: .openURL(run.htmlURL))],
+            actions: [Action(label: "Open run", behavior: .openURL(run.htmlURL), dismissOnTap: false)],
             presence: .sticky,
             alerting: stale ? .silent : .ringing()
         )

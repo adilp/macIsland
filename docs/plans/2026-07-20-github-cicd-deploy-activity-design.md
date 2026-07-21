@@ -8,8 +8,8 @@
 
 Surface example-org deploys on the island so you don't have to go check on CI.
 While a deploy runs, the notch shows a compact, iOS-Live-Activity-style **peek**
-(icon + live elapsed clock). On finish it resolves: green-flash on success, a
-sticky ringing card on failure. No noise otherwise.
+(icon + live elapsed clock). On finish it resolves into a persistent completion card —
+green on success, a red ringing one on failure — that stays until you dismiss it.
 
 ## Decisions (settled)
 
@@ -20,7 +20,7 @@ sticky ringing card on failure. No noise otherwise.
 | Coexistence | Two planes: peek owns the pill (ambient), notifications unroll below |
 | Transport | `gh auth token` once → native URLSession polling the REST API |
 | Scope | All `main` deploys, whoever pushed |
-| Success | Pill green-flashes ~2s, then collapses/revokes (optional brief toast) |
+| Success | Persistent sticky green card (silent), stays until dismissed |
 | Failure / timed-out | Revoke activity → post sticky `.ringing` card (reuses existing ring) |
 | Cancelled / skipped | Quiet revoke, no ring, no red |
 | Cadence | ~15s while a run is active; idle backs off 60s → ~5min |
@@ -41,7 +41,7 @@ new surface. Every terminal state hands off to machinery that already exists.**
 - **Notification layer (existing): "cards."** On any terminal state the source
   **revokes the activity** and, if it failed, **posts an ordinary sticky ringing
   card** — exactly what `CalendarSource` already does for a meeting Join. Success
-  green-flashes and revokes. Cancelled/skipped revokes silently.
+  becomes a persistent sticky green card. Cancelled/skipped revokes silently.
 
 Payoff: the failure card, the ring, sticky/transient behavior, ring-ownership
 policy, and the `openURL` action are all **reused unchanged**. New surface area is
@@ -80,8 +80,8 @@ public struct ActivityStyle: Equatable, Codable, Sendable {
 
 An item with a non-nil `activity` is "pill-resident" — the pill gates purely on
 `activity != nil`, independent of presence. This keeps two axes clean: `Presence` =
-*lifetime* (a running activity is a sticky card; the success flash is a brief
-`.transient` one); `ActivityStyle` = *render me compactly in the pill*. Because it's
+*lifetime* (a running activity is a sticky card; a completed one is a sticky card too);
+`ActivityStyle` = *render me compactly in the pill*. Because it's
 an ordinary card underneath, expand-into-stack works with no extra plumbing.
 
 **Pill summary is a Core facility, not GitHub's.** A pure function derives pill
@@ -107,7 +107,7 @@ in-process GitHub source needs it now).
   `TimelineView` — **no per-second re-posting.**
 - Expanded, each activity is a stack row (sticky tier) with its own clock and an
   "Open run" action.
-- Success → brief green tint on the pill before revoke.
+- Success → leaves the pill; a persistent sticky green completion card in the stack.
 
 ## Data flow / state machine
 
@@ -124,7 +124,7 @@ ID, reconcile against an in-memory `[runID: (status, attempt)]` map:
   `github` source id → `github/run-<id>`), action
   `openURL(htmlUrl)`.
 - **Still running** → no-op (clock ticks locally; never re-post to advance time).
-- **→ success** → green-flash, then `revoke` (optional 2s transient toast).
+- **→ success** → upsert to a persistent sticky green completion card (silent).
 - **→ failure / timed-out** → `revoke` activity, `post` sticky `.ringing` card
   ("❌ Deploy Web failed", body = branch·short-sha, `openURL` action).
 - **→ cancelled / skipped** → `revoke` silently.

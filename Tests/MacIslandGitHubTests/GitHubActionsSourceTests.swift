@@ -67,22 +67,26 @@ final class GitHubActionsSourceTests: XCTestCase {
         XCTAssertEqual(h.core.ordered.count, 1)
     }
 
-    // 3 — success flashes green (transient) then auto-collapses; never rings.
-    func test_success_flashesThenCollapses_noRing() async {
+    // 3 — success posts a persistent completion card (chime, no ring); it leaves the
+    // pill, stays sticky, and does not auto-collapse.
+    func test_success_postsPersistentCard() async {
         let t = Date(timeIntervalSinceReferenceDate: 9_000)
         let h = makeHarness([.runs([ghRun(1, .active, startedAt: t)]),
                              .runs([ghRun(1, .completed, .success, startedAt: t)])])
         await h.source.awaitPoll(count: 1)
         await h.source.pollNow()                                 // poll 2 — success
 
-        XCTAssertEqual(h.audio.startCount, 0)
         let c = card(h.core, "run-1")
-        XCTAssertNotNil(c?.notification.activity)                // still in the pill
-        guard case .transient = c?.notification.presence else { return XCTFail("expected transient") }
+        XCTAssertNotNil(c)
+        XCTAssertNil(c?.notification.activity)                   // left the pill → a stack card
+        XCTAssertEqual(c?.notification.presence, .sticky)        // persistent, no auto-collapse
+        XCTAssertTrue(c?.notification.content.title.contains("deployed") ?? false)
+        XCTAssertEqual(h.audio.startCount, 0)                    // success never rings
+        XCTAssertEqual(h.audio.playOnceCount, 0)                 // …and stays silent (calm)
+        XCTAssertEqual(derivePillState(from: h.core.ordered), .bare)  // pill clear
 
-        await h.clock.advance(by: .seconds(2))                   // the flash elapses
-        XCTAssertNil(card(h.core, "run-1"))
-        XCTAssertEqual(derivePillState(from: h.core.ordered), .bare)
+        await h.clock.advance(by: .seconds(5))                   // time passes…
+        XCTAssertNotNil(card(h.core, "run-1"))                   // …and it's still there
     }
 
     // 4 — failure leaves the pill and lands a sticky ringing card in the stack.
@@ -143,9 +147,9 @@ final class GitHubActionsSourceTests: XCTestCase {
         XCTAssertEqual(h.source.status, .ok)                     // a blip doesn't flip status
 
         await h.source.pollNow()                                 // poll 3 — success resolves it
-        guard case .transient = card(h.core, "run-1")?.notification.presence else {
-            return XCTFail("expected the success flash")
-        }
+        let c = card(h.core, "run-1")
+        XCTAssertEqual(c?.notification.presence, .sticky)        // persistent completion card
+        XCTAssertNil(c?.notification.activity)                   // left the pill
     }
 
     // 8 — a run that vanishes from a *successful* list is revoked quietly.
