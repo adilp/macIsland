@@ -4,6 +4,7 @@
 |---|-------|----------|--------|
 | [001](001-unify-pill-expand-motion.md) | Unify the pill→card hover-expand motion | HIGH | DONE |
 | [002](002-meeting-escalation-morph.md) | Meeting T-5→T-1 escalation morph | MEDIUM | DONE |
+| [003](003-button-press-feedback.md) | Button press feedback (Open run / Join / ✕) | HIGH | DONE |
 
 ## Execution order
 

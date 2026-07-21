@@ -467,7 +467,7 @@ private struct CardRow: View {
                 .foregroundStyle(.white.opacity(0.9))
                 .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
         .accessibilityLabel("Dismiss")
         .opacity(revealDismiss ? 1 : 0)
         .allowsHitTesting(revealDismiss)
@@ -501,6 +501,29 @@ private struct CardRow: View {
     }
 }
 
+/// Press feedback for the card's buttons: the label dips to `scale(0.97)` while held
+/// and eases back on release — subtle (0.97) and fast (140ms), just enough to confirm
+/// the tap for the tier of button that's pressed only occasionally. Replaces `.plain`
+/// where a button had no `:active` response. Under reduced motion the scale is dropped
+/// for a faint opacity dip instead, so the feedback survives without movement.
+private struct PressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        PressableLabel(configuration: configuration)
+    }
+
+    private struct PressableLabel: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            configuration.label
+                .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.97 : 1))
+                .opacity(configuration.isPressed && reduceMotion ? 0.85 : 1)
+                .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+        }
+    }
+}
+
 /// One action button on a card. The primary (first) action reads as filled; a
 /// secondary action is a quieter outline. A disabled button — a `callback` whose
 /// source is gone — greys out and stops responding, the visible half of the orphan
@@ -522,7 +545,7 @@ private struct ActionButton: View {
                 .background(background)
                 .clipShape(Capsule(style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
         .disabled(!isEnabled)               // `.disabled` already blocks hit testing
         .opacity(isEnabled ? 1 : 0.4)
     }
