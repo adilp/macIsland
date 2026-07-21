@@ -245,34 +245,43 @@ struct IslandView: View {
 
     // MARK: - The peek (compact activity in the pill)
 
-    // A single-line, glanceable summary of the running activities: a leading glyph and
-    // a trailing live clock (or a count when several run at once). The clock ticks
-    // itself via `TimelineView` — no re-posting, so the model stays quiescent.
+    // A single-line, glanceable peek of the running activities (the Dynamic-Island
+    // model): the most-relevant activity *leads* — its glyph + live clock — and any
+    // others collapse to a minimal "+N" on the trailing edge. The clock ticks itself
+    // via `TimelineView`, so the model stays quiescent. Hovering expands everything.
     @ViewBuilder
     private var peekRow: some View {
+        switch pill {
+        case .bare:
+            EmptyView()
+        case let .single(glyph, tint, trailing):
+            peekContent(glyph: glyph, tint: tint, trailing: trailing, extra: 0)
+        case let .leadingPlusMinimal(glyph, tint, trailing, extra):
+            peekContent(glyph: glyph, tint: tint, trailing: trailing, extra: extra)
+        }
+    }
+
+    private func peekContent(glyph: Icon, tint: String?, trailing: PillTrailing, extra: Int) -> some View {
         HStack(spacing: 10) {
-            switch pill {
-            case .bare:
-                EmptyView()
-            case let .single(glyph, trailing):
-                peekGlyph(glyph).foregroundStyle(peekTint ?? .white)
-                Spacer(minLength: 8)
-                peekTrailing(trailing)
-            case let .many(count, noun, trailing):
-                Image(systemName: "square.stack.3d.up.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                Text("\(count) \(Self.plural(noun, count))")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                peekTrailing(trailing)
-            }
+            peekGlyph(glyph).foregroundStyle(tint.flatMap(Color.init(hexString:)) ?? .white)
+            Spacer(minLength: 8)
+            peekTrailing(trailing)
+            if extra > 0 { minimalBadge(extra) }
         }
         .padding(.horizontal, 22)
         .frame(height: 24)
         .frame(maxWidth: .infinity)
+    }
+
+    // The Dynamic-Island "detached minimal": a small pill saying how many *other*
+    // activities are running behind the leader. Hover expands them into full rows.
+    private func minimalBadge(_ n: Int) -> some View {
+        Text("+\(n)")
+            .font(.system(size: 11, weight: .bold).monospacedDigit())
+            .foregroundStyle(.white.opacity(0.9))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule(style: .continuous).fill(.white.opacity(0.18)))
     }
 
     @ViewBuilder
@@ -298,20 +307,6 @@ struct IslandView: View {
         case .clock(let since):
             ElapsedText(since: since)
         }
-    }
-
-    // The tint of the single running activity, if it set one (e.g. the green success
-    // flash) — read straight off the card so the peek colour tracks the source.
-    private var peekTint: Color? {
-        guard let card = cards.first(where: { $0.notification.activity != nil }),
-              let hex = card.notification.content.tint else { return nil }
-        return Color(hexString: hex)
-    }
-
-    private static func plural(_ noun: String?, _ count: Int) -> String {
-        let base = noun ?? "activity"
-        guard count != 1 else { return base }
-        return base == "activity" ? "activities" : base + "s"
     }
 
     private var background: some View {

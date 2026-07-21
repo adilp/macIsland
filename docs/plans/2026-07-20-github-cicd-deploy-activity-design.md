@@ -74,7 +74,7 @@ public struct ActivityStyle: Equatable, Codable, Sendable {
     public var glyph: Icon        // compact leading symbol
     public var since: Date?       // set → trailing shows a live elapsed clock
     public var trailing: String?  // used when since == nil (static)
-    public var noun: String?      // e.g. "deploy" — for pluralized pill summaries
+    public var relevance: Double  // Apple-style relevanceScore: who leads the pill
 }
 ```
 
@@ -84,19 +84,27 @@ An item with a non-nil `activity` is "pill-resident" — the pill gates purely o
 `ActivityStyle` = *render me compactly in the pill*. Because it's
 an ordinary card underneath, expand-into-stack works with no extra plumbing.
 
-**Pill summary is a Core facility, not GitHub's.** A pure function derives pill
-state over *all* activity-bearing items across *every* source:
+**Pill summary is a Core facility, not GitHub's** — and it mirrors the Dynamic
+Island's multi-activity model. A pure function derives pill state over *all*
+activity-bearing items across *every* source:
 
 ```swift
 // MacIslandCore — source-agnostic
-enum PillState { case bare, single(glyph: Icon, trailing: Trailing),
-                      many(count: Int, noun: String?, maxSince: Date?) }
+enum PillState {
+    case bare
+    case single(glyph: Icon, tint: String?, trailing: PillTrailing)
+    case leadingPlusMinimal(glyph: Icon, tint: String?, trailing: PillTrailing, extra: Int)
+}
 func derivePillState(from ordered: [PlacedNotification]) -> PillState
 ```
 
-Rules: 0 → `bare`; 1 → its glyph + clock/static trailing; ≥2 sharing a `noun` →
-`N deploys · <maxElapsed>`; mixed nouns → neutral `N activities`. Any module that
-emits activities participates in the same pill for free.
+Rules (never cram — one leads, the rest minimize): 0 → `bare`; 1 → `single` (its
+glyph, tint, clock/static trailing); ≥2 → `leadingPlusMinimal` — the **highest-
+`relevance`** activity leads (ties break by render order, nearest-notch), the rest
+collapse to a minimal "+N". The leader shows *its own* clock, sidestepping a count-up
+(elapsed) vs count-down (time-to-start) mismatch. Hovering expands everything into
+the stack (our "expanded" presentation), so we have no cram problem there. Any module
+that emits activities participates for free.
 
 **Wire/JSON-ingress support for activities is deferred** (YAGNI — only the
 in-process GitHub source needs it now).

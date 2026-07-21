@@ -25,15 +25,19 @@ public struct ActivityStyle: Equatable, Codable, Sendable {
     public var since: Date?
     /// Static trailing text, used only when `since == nil` (e.g. "queued").
     public var trailing: String?
-    /// Singular noun for a multi-activity summary ("deploy" → "2 deploys"). When the
-    /// live activities disagree on the noun, the summary falls back to a neutral word.
-    public var noun: String?
+    /// How much this activity deserves the pill when several run at once — the notch
+    /// analogue of an iOS Live Activity's `relevanceScore`. The highest-relevance
+    /// activity *leads* the pill (its glyph + clock); the rest collapse to a minimal
+    /// "+N". Ties break by render order (nearest the notch wins). Default `0`, so a
+    /// source opts into priority only when it has a reason to (e.g. a meeting about to
+    /// start outranking a background build).
+    public var relevance: Double
 
-    public init(glyph: Icon, since: Date? = nil, trailing: String? = nil, noun: String? = nil) {
+    public init(glyph: Icon, since: Date? = nil, trailing: String? = nil, relevance: Double = 0) {
         self.glyph = glyph
         self.since = since
         self.trailing = trailing
-        self.noun = noun
+        self.relevance = relevance
     }
 
     /// This activity's trailing slot in the pill: a live clock if it has a `since`,
@@ -57,14 +61,20 @@ public enum PillTrailing: Equatable, Sendable {
 /// What the pill should show, derived from the live *activity* set across **all**
 /// sources. The pill and the downward stack are two planes; `PillState` describes the
 /// ambient (pill) one. Pure value so the view just renders it.
+///
+/// This mirrors the Dynamic Island's multi-activity model: never cram — one activity
+/// *leads*, the rest collapse to a minimal "+N", and hovering expands everything into
+/// the stack (our downward stack is the "expanded" presentation, so we have no cram
+/// problem there). `tint` is the leading activity's `Content.tint` (`#RRGGBB`), passed
+/// through as a string so Core stays free of any rendering type.
 public enum PillState: Equatable, Sendable {
     /// No activities — the bare resident pill.
     case bare
-    /// Exactly one activity: its glyph and trailing.
-    case single(glyph: Icon, trailing: PillTrailing)
-    /// Two or more: a count, an optional shared singular noun (nil when they
-    /// disagree), and the clock of the longest-running one.
-    case many(count: Int, noun: String?, trailing: PillTrailing)
+    /// Exactly one activity leads the pill: its glyph, tint, and trailing.
+    case single(glyph: Icon, tint: String?, trailing: PillTrailing)
+    /// The most-relevant activity leads (glyph + tint + its own trailing); `extra`
+    /// more run concurrently, shown as a minimal "+N" indicator.
+    case leadingPlusMinimal(glyph: Icon, tint: String?, trailing: PillTrailing, extra: Int)
 }
 
 /// Derive the pill presentation from the render order. Considers only cards carrying
@@ -73,27 +83,29 @@ public enum PillState: Equatable, Sendable {
 /// activities.
 ///
 /// - 0 activities → `.bare`
-/// - 1 → `.single` with its glyph and trailing (a live clock when it has a `since`)
-/// - ≥2 → `.many(count:)`; `noun` is the activities' shared singular noun (or `nil`
-///   when they disagree), and the trailing clock tracks the **longest-running**
-///   activity — the *earliest* `since`, since that has the largest elapsed time.
+/// - 1 → `.single` (its glyph, tint, and trailing — a live clock when it has a `since`)
+/// - ≥2 → `.leadingPlusMinimal`: the **highest-`relevance`** activity leads (ties
+///   broken by render order, so the one nearest the notch wins), and the remaining
+///   `count − 1` collapse to a minimal "+N". The leader shows *its own* clock, which
+///   sidesteps mixing a count-up (elapsed) and a future count-down (time-to-start)
+///   into one impossible shared clock.
 ///
 /// Pure and non-isolated: a total function of its input, callable from anywhere
 /// (the view calls it on the main actor; tests call it directly).
 public func derivePillState(from ordered: [PlacedNotification]) -> PillState {
-    let styles = ordered.compactMap(\.notification.activity)
-    switch styles.count {
-    case 0:
-        return .bare
-    case 1:
-        return .single(glyph: styles[0].glyph, trailing: styles[0].pillTrailing)
-    default:
-        // A single shared noun summarizes cleanly ("2 deploys"); any disagreement
-        // (incl. a mix of set/unset) falls back to the neutral word in the view.
-        let sharedNoun = Set(styles.map(\.noun)).count == 1 ? styles[0].noun : nil
-        // Longest-running = earliest start = the clock that reads highest.
-        let earliest = styles.compactMap(\.since).min()
-        let trailing: PillTrailing = earliest.map { .clock(since: $0) } ?? .none
-        return .many(count: styles.count, noun: sharedNoun, trailing: trailing)
-    }
+    let activities = ordered.filter { $0.notification.activity != nil }
+    guard !activities.isEmpty else { return .bare }
+
+    // Leader = the top relevance; among equals, the first in render order (nearest
+    // the notch). Relevance defaults are exactly 0.0 and sources set discrete values,
+    // so the `==` tie test does no float arithmetic.
+    let topRelevance = activities.map { $0.notification.activity!.relevance }.max()!
+    let leader = activities.first { $0.notification.activity!.relevance == topRelevance }!
+
+    let style = leader.notification.activity!
+    let tint = leader.notification.content.tint
+    let extra = activities.count - 1
+    return extra == 0
+        ? .single(glyph: style.glyph, tint: tint, trailing: style.pillTrailing)
+        : .leadingPlusMinimal(glyph: style.glyph, tint: tint, trailing: style.pillTrailing, extra: extra)
 }

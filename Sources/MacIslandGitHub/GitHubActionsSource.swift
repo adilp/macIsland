@@ -217,8 +217,9 @@ public final class GitHubActionsSource: NotificationSource {
             alerting: .silent,
             activity: ActivityStyle(
                 glyph: .symbol(Self.runningGlyph),
-                since: run.startedAt ?? clock.now(),
-                noun: "deploy"
+                since: run.startedAt ?? clock.now()
+                // relevance defaults to 0 — deploys don't claim priority over, say, an
+                // imminent meeting that later emits a higher-relevance peek.
             )
         )
     }

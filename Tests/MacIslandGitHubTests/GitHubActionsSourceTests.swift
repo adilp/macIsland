@@ -48,7 +48,7 @@ final class GitHubActionsSourceTests: XCTestCase {
         XCTAssertEqual(c?.notification.actions.count, 1)          // "Open run"
         XCTAssertEqual(h.audio.startCount, 0)                     // silent while running
         XCTAssertEqual(derivePillState(from: h.core.ordered),
-                       .single(glyph: .symbol("shippingbox.fill"), trailing: .clock(since: t)))
+                       .single(glyph: .symbol("shippingbox.fill"), tint: nil, trailing: .clock(since: t)))
     }
 
     // 2 — a still-running run on a later poll must not re-post (no render churn).
