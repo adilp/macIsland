@@ -13,16 +13,12 @@ struct MacIslandApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        // Boot step 2: the menu-bar item. Once boot completes the delegate publishes the
-        // module registry + core, and this flips from a bare Quit to the full Modules list
-        // (a `.window` style so we get real toggles/status rows, not plain menu items).
+        // Boot step 2: the menu-bar item. Its content is a `View` that observes the delegate
+        // so it flips from a bare Quit to the full Modules list the instant boot publishes
+        // the registry (a `Scene` content builder wouldn't — see `MenuBarContent`). A
+        // `.window` style gives us real toggle/status rows, not plain menu items.
         MenuBarExtra("macIsland", systemImage: "sparkles") {
-            if let registry = delegate.moduleRegistry, let core = delegate.islandCore {
-                ModulesMenu(registry: registry, core: core)
-            } else {
-                Button("Quit macIsland") { NSApp.terminate(nil) }
-                    .keyboardShortcut("q")
-            }
+            MenuBarContent(delegate: delegate)
         }
         .menuBarExtraStyle(.window)
 
@@ -30,9 +26,36 @@ struct MacIslandApp: App {
         // Settings window, roomier than the dropdown). Empty in v1 — the built-ins need only
         // buttons — so the hook ships and the first module with a panel just slots in.
         Settings {
-            if let registry = delegate.moduleRegistry {
-                ModulesSettingsView(registry: registry)
-            }
+            SettingsContent(delegate: delegate)
+        }
+    }
+}
+
+/// The menu-bar dropdown's content. It takes the delegate as an `@ObservedObject` — not the
+/// `@NSApplicationDelegateAdaptor` value read straight in the `Scene` — because a `Scene`'s
+/// content builder evaluates once and won't re-read the delegate's `@Published` optionals,
+/// whereas an `@ObservedObject` `View` re-renders on publish. So this flips to the Modules
+/// list the moment boot sets the registry, instead of staying stuck on the bootstrap Quit.
+private struct MenuBarContent: View {
+    @ObservedObject var delegate: AppDelegate
+
+    var body: some View {
+        if let registry = delegate.moduleRegistry, let core = delegate.islandCore {
+            ModulesMenu(registry: registry, core: core)
+        } else {
+            Button("Quit macIsland") { NSApp.terminate(nil) }
+                .keyboardShortcut("q")
+        }
+    }
+}
+
+/// The Settings window content — same observation reasoning as `MenuBarContent`.
+private struct SettingsContent: View {
+    @ObservedObject var delegate: AppDelegate
+
+    var body: some View {
+        if let registry = delegate.moduleRegistry {
+            ModulesSettingsView(registry: registry)
         }
     }
 }
