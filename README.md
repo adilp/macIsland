@@ -18,10 +18,22 @@ first), sticky things stay pinned above transient toasts, and an imminent meetin
 - `Sources/MacIslandCore` — the dependency-free core (domain model, stack controller, source contract, registry,
   `Alerter`, panel/geometry, and the local JSON ingress: wire codec, `SocketSource`, `IngressHost`).
   **Apple frameworks only, zero third-party runtime dependencies.**
+- `Sources/MacIslandGitHub` — the built-in GitHub CI/CD deploy source (its own library so the core stays
+  network-free and the source stays headless-testable).
 - `Sources/MacIslandApp` — the `LSUIElement` menu-bar agent (notch panel + boot sequence).
 - `Sources/MacIslandCLI` — the `macisland` command, thin sugar over the ingress socket.
-- `Tests/MacIslandCoreTests` — headless tests at the `SourceHandle` / `NotificationSource` and in-memory
-  `Connection` seams.
+- `Tests/MacIslandCoreTests`, `Tests/MacIslandGitHubTests` — headless tests at the `SourceHandle` /
+  `NotificationSource` and in-memory `Connection` seams.
+
+## Developing & extending
+
+**[`docs/DEVELOPING.md`](docs/DEVELOPING.md)** is the developer guide: how the targets fit together, the
+domain model, and — the main event — how to **add your own source**. Everything that puts something on the
+island is a `NotificationSource`; adding a feature means adding a source, in two flavors:
+
+- **In-process (Swift):** conform to `NotificationSource` (floor: `id` + `start`), then `core.register(…)` at
+  boot. Post live-updating cards and iOS-Live-Activity-style pill "peeks".
+- **Out-of-process (any language):** push JSONL to the ingress socket (see below) — no Swift required.
 
 ## Performance
 
@@ -48,7 +60,7 @@ Requires **macOS 14+ (Sonoma)**.
 ```sh
 swift build
 swift test
+swift run MacIslandApp     # launch the menu-bar agent
 ```
 
-_This README is a minimal orientation stub — the full README shape is deliberately deferred (see the build spec's
-Out of Scope)._
+See [`docs/DEVELOPING.md`](docs/DEVELOPING.md) to go further.
