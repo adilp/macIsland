@@ -66,15 +66,34 @@ struct IslandView: View {
     // How far the top/bottom scroll edges fade when the stack overflows (spec §4).
     private static let fadeHeight: CGFloat = 22
 
+    // The ambient (pill) plane, derived from every activity-bearing card across all
+    // sources. When collapsed we show this as a compact *peek*; on hover the activities
+    // expand into full rows and the peek gives way to the sheet (the two planes).
+    private var pill: PillState { derivePillState(from: cards) }
+
+    // The rows the downward sheet renders. Collapsed, activity cards live in the pill
+    // (not the sheet), so only non-activity cards (toasts, failure cards) show; on hover
+    // everything expands into rows.
+    private var visibleCards: [PlacedNotification] {
+        isHovering ? cards : cards.filter { $0.notification.activity == nil }
+    }
+
+    // Show the compact peek only while collapsed and something is actually running.
+    private var showPeek: Bool {
+        if isHovering { return false }
+        if case .bare = pill { return false }
+        return true
+    }
+
     // A stable key over the visible card ids — drives the enter/exit + spring reflow
     // whenever the set changes. Unchanged by an in-place update (same ids), so an
     // update animates its content without re-sorting or re-entering (spec §2).
-    private var cardKey: [NotificationID] { cards.map(\.id) }
+    private var cardKey: [NotificationID] { visibleCards.map(\.id) }
 
-    // The sticky/transient split. `cards` is already sticky-first (core ordering), so
-    // the transient tier is the suffix; the divider goes between them when both exist.
+    // The sticky/transient split. `visibleCards` is already sticky-first (core
+    // ordering), so the transient tier is the suffix; the divider goes between them.
     private var firstTransientIndex: Int? {
-        cards.firstIndex { $0.tier == .transient }
+        visibleCards.firstIndex { $0.tier == .transient }
     }
 
     var body: some View {
@@ -92,8 +111,10 @@ struct IslandView: View {
 
     private var sheet: some View {
         Group {
-            if cards.isEmpty {
-                idlePill
+            if visibleCards.isEmpty {
+                // Nothing in the downward sheet: either a bare resident pill, or — when a
+                // deploy is running — just the compact peek.
+                if showPeek { peekOnly } else { idlePill }
             } else {
                 content
             }
@@ -117,15 +138,29 @@ struct IslandView: View {
     }
 
     // The notch clearance is fixed at the top (continuous with the notch); only the
-    // card area below it scrolls when the stack overflows.
+    // card area below it scrolls when the stack overflows. A running-deploy peek sits
+    // between the notch band and the cards when collapsed alongside other cards.
     private var content: some View {
         VStack(spacing: 0) {
             Color.clear.frame(height: topInset)          // clear the notch band
+            if showPeek {
+                peekRow.padding(.bottom, Self.gutter)
+            }
             if let panelMax = panelMaxHeight {
                 scrollingCardArea(maxHeight: scrollRegionHeight(panelMax: panelMax))
             } else {
                 cardColumn
             }
+        }
+        .padding(.bottom, Self.contentBottomPad)
+    }
+
+    // The compact peek standing alone (a running deploy with no other cards): the notch
+    // band, then the glyph + live clock. Static except the clock, which ticks itself.
+    private var peekOnly: some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: topInset)
+            peekRow
         }
         .padding(.bottom, Self.contentBottomPad)
     }
@@ -147,7 +182,7 @@ struct IslandView: View {
     // spring reflow. Newest sits nearest the notch within each tier (core ordering).
     private var cardColumn: some View {
         VStack(spacing: Self.gutter) {
-            ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+            ForEach(Array(visibleCards.enumerated()), id: \.element.id) { index, card in
                 // The tier divider goes immediately above the first transient card,
                 // but only when sticky cards sit above it (spec §6).
                 if index == firstTransientIndex, index > 0 {
@@ -199,10 +234,116 @@ struct IslandView: View {
             .padding(.horizontal, 14)
     }
 
+    // MARK: - The peek (compact activity in the pill)
+
+    // A single-line, glanceable summary of the running activities: a leading glyph and
+    // a trailing live clock (or a count when several run at once). The clock ticks
+    // itself via `TimelineView` — no re-posting, so the model stays quiescent.
+    @ViewBuilder
+    private var peekRow: some View {
+        HStack(spacing: 10) {
+            switch pill {
+            case .bare:
+                EmptyView()
+            case let .single(glyph, trailing):
+                peekGlyph(glyph).foregroundStyle(peekTint ?? .white)
+                Spacer(minLength: 8)
+                peekTrailing(trailing)
+            case let .many(count, noun, trailing):
+                Image(systemName: "square.stack.3d.up.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("\(count) \(Self.plural(noun, count))")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                peekTrailing(trailing)
+            }
+        }
+        .padding(.horizontal, 22)
+        .frame(height: 24)
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func peekGlyph(_ icon: Icon) -> some View {
+        switch icon {
+        case .symbol(let name):
+            Image(systemName: name).font(.system(size: 16, weight: .semibold))
+        case .image:
+            // The peek is symbol-only; a raster activity glyph falls back to a default.
+            Image(systemName: "shippingbox.fill").font(.system(size: 16, weight: .semibold))
+        }
+    }
+
+    @ViewBuilder
+    private func peekTrailing(_ trailing: PillTrailing) -> some View {
+        switch trailing {
+        case .none:
+            EmptyView()
+        case .text(let s):
+            Text(s)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+        case .clock(let since):
+            ElapsedText(since: since)
+        }
+    }
+
+    // The tint of the single running activity, if it set one (e.g. the green success
+    // flash) — read straight off the card so the peek colour tracks the source.
+    private var peekTint: Color? {
+        guard let card = cards.first(where: { $0.notification.activity != nil }),
+              let hex = card.notification.content.tint else { return nil }
+        return Color(hexString: hex)
+    }
+
+    private static func plural(_ noun: String?, _ count: Int) -> String {
+        let base = noun ?? "activity"
+        guard count != 1 else { return base }
+        return base == "activity" ? "activities" : base + "s"
+    }
+
     private var background: some View {
         RoundedRectangle(cornerRadius: 26, style: .continuous)
             .fill(Color.black.opacity(0.92))
             .shadow(color: .black.opacity(0.4), radius: 12, y: 6)   // fades inside the margins
+    }
+}
+
+/// A live, self-ticking `M:SS` elapsed clock counting up from `since`. Uses
+/// `TimelineView` so it advances once a second on its own — the model never re-posts
+/// to move it, keeping the core quiescent while a deploy runs.
+private struct ElapsedText: View {
+    let since: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: since, by: 1)) { context in
+            Text(Self.format(context.date.timeIntervalSince(since)))
+                .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(.white)
+        }
+    }
+
+    static func format(_ interval: TimeInterval) -> String {
+        let total = max(0, Int(interval))
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
+
+extension Color {
+    /// Parse a `#RRGGBB` hex string (the `Content.tint` wire form) into a `Color`;
+    /// returns nil on anything malformed so the caller falls back to a theme colour.
+    init?(hexString: String) {
+        var s = hexString
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6, let value = UInt32(s, radix: 16) else { return nil }
+        self = Color(
+            red: Double((value >> 16) & 0xFF) / 255,
+            green: Double((value >> 8) & 0xFF) / 255,
+            blue: Double(value & 0xFF) / 255
+        )
     }
 }
 

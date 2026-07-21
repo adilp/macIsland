@@ -21,6 +21,12 @@ public struct Notification: Equatable, Codable, Sendable, Identifiable {
     public var presence: Presence
     /// Sound level.
     public var alerting: Alerting
+    /// Optional ambient (in-pill) presentation. When non-nil the card is
+    /// *pill-resident* — it shows compactly beside the notch and expands into its
+    /// stack row on hover (usually `.sticky` while running; a success flash is a brief
+    /// `.transient` one). `nil` (the default) → an ordinary downward card. See
+    /// `ActivityStyle` / `derivePillState`.
+    public var activity: ActivityStyle?
 
     /// Core default transient lifetime when a source doesn't specify one (≈5s):
     /// most notifications are ephemeral; sticky is the deliberate opt-in.
@@ -31,12 +37,14 @@ public struct Notification: Equatable, Codable, Sendable, Identifiable {
         content: Content,
         actions: [Action] = [],
         presence: Presence = .transient(after: Notification.defaultTransientDuration),
-        alerting: Alerting = .silent
+        alerting: Alerting = .silent,
+        activity: ActivityStyle? = nil
     ) {
         self.id = id
         self.content = content
         self.actions = actions
         self.presence = presence
         self.alerting = alerting
+        self.activity = activity
     }
 }

@@ -78,10 +78,11 @@ public struct ActivityStyle: Equatable, Codable, Sendable {
 }
 ```
 
-An item posted with `presence: .sticky` **and** a non-nil `activity` is
-"pill-resident." This keeps two axes clean: `Presence` = *lifetime* (an activity is
-just a sticky card); `ActivityStyle` = *render me compactly in the pill*. Because
-it's a sticky card underneath, expand-into-stack works with no extra plumbing.
+An item with a non-nil `activity` is "pill-resident" — the pill gates purely on
+`activity != nil`, independent of presence. This keeps two axes clean: `Presence` =
+*lifetime* (a running activity is a sticky card; the success flash is a brief
+`.transient` one); `ActivityStyle` = *render me compactly in the pill*. Because it's
+an ordinary card underneath, expand-into-stack works with no extra plumbing.
 
 **Pill summary is a Core facility, not GitHub's.** A pure function derives pill
 state over *all* activity-bearing items across *every* source:
@@ -119,7 +120,8 @@ first poll via the injected `Clock`.
 ID, reconcile against an in-memory `[runID: (status, attempt)]` map:
 
 - **New** queued/in-progress → `post` sticky card, `ActivityStyle(glyph: 🚀,
-  since: startedAt, noun: "deploy")`, value `gh-run-<id>`, action
+  since: startedAt, noun: "deploy")`, value `run-<id>` (namespaced under the
+  `github` source id → `github/run-<id>`), action
   `openURL(htmlUrl)`.
 - **Still running** → no-op (clock ticks locally; never re-post to advance time).
 - **→ success** → green-flash, then `revoke` (optional 2s transient toast).
@@ -146,8 +148,22 @@ failures that finished while the app was off.
     can't reach other developers' machines. Hook is a no-op if the socket/file
     target is absent, runs backgrounded with a sub-second timeout, and always exits
     `0` — it can never block or slow a push.
-  - **No installer** — the doc ships the ~5-line snippet and a one-line paste to
-    drop it into `.git/hooks/pre-push`.
+  - **No installer** — `Scripts/macisland-prepush-nudge.sh` is the ~5-line hook; copy
+    it into example-org's `.git/hooks/pre-push` once (`cp … .git/hooks/pre-push &&
+    chmod +x .git/hooks/pre-push`). A plain file `touch` is instant and local, so the
+    hook needs no backgrounding — it no-ops when the island isn't running and always
+    exits 0.
+
+## Implementation notes (as built)
+
+- New library target **`MacIslandGitHub`** (+ test target `MacIslandGitHubTests`) so
+  the core stays network-free while the source is headless-testable.
+- Core additions: `ActivityStyle`, `PillState`/`PillTrailing`, `derivePillState`, and
+  an optional `Notification.activity`. The pill summary is source-agnostic Core.
+- `GitHubActionsSource` reconcile removes a run from tracking on any terminal state, so
+  the cold-start guard and re-run re-adoption both fall out for free (no attempt field).
+- The elapsed clock ticks in the view via `TimelineView`; the model never re-posts.
+- 20 new tests (8 pill-state + 12 source); full suite green at 165.
 
 ## Error handling & edge cases
 

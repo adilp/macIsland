@@ -13,6 +13,10 @@ let package = Package(
     ],
     products: [
         .library(name: "MacIslandCore", targets: ["MacIslandCore"]),
+        // A GitHub CI/CD deploy-activity source. Its own library (not folded into the
+        // core) so MacIslandCore stays network-free / Apple-only, while the source
+        // remains headless-testable at the NotificationSource seam.
+        .library(name: "MacIslandGitHub", targets: ["MacIslandGitHub"]),
         .executable(name: "MacIslandApp", targets: ["MacIslandApp"]),
         // The `macisland` CLI — thin sugar over the ingress socket (spec §9). Lowercase
         // product name to avoid a case-only clash with the MacIsland* dirs on a
@@ -31,9 +35,19 @@ let package = Package(
         // The LSUIElement menu-bar agent: the resident notch-pinned NSPanel hosting
         // the SwiftUI island, a MenuBarExtra (Quit), and the boot sequence that wires
         // the core to a dev source. GUI, so verified by build + run, not headless tests.
+        // The GitHub CI/CD source: polls GitHub Actions for deploy runs and maps them
+        // onto pill *activities* (running) and sticky ringing cards (failure). Owns its
+        // own network (URLSession) and token acquisition (`gh auth token`) — the core
+        // does no network, sources fetch themselves. Depends only on the core's domain
+        // model + NotificationSource seam.
+        .target(
+            name: "MacIslandGitHub",
+            dependencies: ["MacIslandCore"]
+        ),
+
         .executableTarget(
             name: "MacIslandApp",
-            dependencies: ["MacIslandCore"]
+            dependencies: ["MacIslandCore", "MacIslandGitHub"]
         ),
 
         // Headless tests, driven at the SourceHandle / NotificationSource seam with an
@@ -42,6 +56,13 @@ let package = Package(
         .testTarget(
             name: "MacIslandCoreTests",
             dependencies: ["MacIslandCore"]
+        ),
+
+        // Headless tests for the GitHub source, driven with a scripted fake client and
+        // an injected TestClock — no network, no real `gh`, no wall-clock waits.
+        .testTarget(
+            name: "MacIslandGitHubTests",
+            dependencies: ["MacIslandGitHub"]
         ),
 
         // The `macisland` CLI: a thin POSIX client that translates each subcommand

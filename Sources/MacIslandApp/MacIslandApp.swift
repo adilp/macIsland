@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import MacIslandCore
+import MacIslandGitHub
 
 /// macIsland — the single-process, `LSUIElement` menu-bar agent. A resident
 /// notch-pinned `NSPanel` hosts the SwiftUI island; a `MenuBarExtra` gives the one
@@ -65,6 +66,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // EventKit access is auto-requested on first launch and it stays inert if denied
         // (Calendar spec §2). `EventKitStore` is the real EventKit seam.
         core.register(CalendarSource(store: EventKitStore(), clock: clock))
+
+        // Step 4 (cont.): the GitHub CI/CD deploy source. Watches example-org's five
+        // deploy workflows on `main` and surfaces each running deploy as a pill activity
+        // (a compact glyph + live clock), resolving to a green flash or a sticky ringing
+        // failure card. Reuses the user's existing `gh` login for the token; the local
+        // `pre-push` hook (docs/plans/…-design.md) touches `nudgeFile` to snap it to a
+        // fast poll the instant you push. Shares the core clock so its timers and the
+        // ring timeout live on one timeline.
+        let deployWorkflowIDs: Set<Int> = [
+            244604640,   // Deploy API
+            244604641,   // Deploy Web
+            246562591,   // Deploy Web (Democrat)
+            309459456,   // Mobile Native Build
+            309459458    // Mobile OTA Update
+        ]
+        core.register(GitHubActionsSource(
+            client: GitHubDeployClient(
+                owner: "example-org", repo: "example-org", branch: "main",
+                workflowIDs: deployWorkflowIDs
+            ),
+            clock: clock,
+            nudgeFile: AppSupport.directory.appendingPathComponent("github.poke")
+        ))
 
         // Step 5 (last): the local JSON ingress. Bind the UDS and start accepting only
         // now that the core can render — each connection mints a SocketSource (unified

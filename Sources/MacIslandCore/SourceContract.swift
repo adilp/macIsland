@@ -43,14 +43,16 @@ public final class SourceHandle {
         value: String? = nil,
         actions: [Action] = [],
         presence: Presence = .transient(after: Notification.defaultTransientDuration),
-        alerting: Alerting = .silent
+        alerting: Alerting = .silent,
+        activity: ActivityStyle? = nil
     ) {
         let n = Notification(
             id: NotificationID(source: sourceID, value: value ?? UUID().uuidString),
             content: content,
             actions: actions,
             presence: presence,
-            alerting: alerting
+            alerting: alerting,
+            activity: activity
         )
         target?.post(n, from: sourceID)
     }
@@ -84,7 +86,8 @@ extension Notification {
             content: content,
             actions: actions,
             presence: presence,
-            alerting: alerting
+            alerting: alerting,
+            activity: activity
         )
     }
 }
