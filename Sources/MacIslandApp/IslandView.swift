@@ -397,6 +397,7 @@ private struct CardRow: View {
                             .font(.system(size: 13))
                             .foregroundStyle(.white.opacity(0.7))
                             .lineLimit(2)
+                            .contentTransition(.opacity)   // crossfade "in 5 min" → "starting now"
                     }
                 }
                 Spacer(minLength: 10)
@@ -404,13 +405,24 @@ private struct CardRow: View {
             }
             if !actions.isEmpty {
                 actionRow
+                    .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .leading)))
             }
             if let countdown {
                 CountdownBar(countdown: countdown)
+                    .transition(.opacity)
             }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 13)
+        // The T-5→T-1 escalation is an in-place upsert (same id), so the outer
+        // cardKey animation doesn't fire — animate the card's own morph here: when the
+        // action count changes (0 → Join), the Join button fades/scales in and the
+        // countdown bar fades out together, so the card visibly *becomes* a Join card
+        // rather than teleporting (plan: meeting escalation morph). Keyed on the action
+        // count — a stable value that only flips on escalation, so it never disturbs the
+        // countdown bar's own per-sample depletion animation.
+        .animation(.easeOut(duration: 0.22), value: actions.count)
+        .animation(.easeOut(duration: 0.22), value: content.body)
     }
 
     // The card's 0…2 action buttons, primary (index 0) first — plus the dismiss ✕,
