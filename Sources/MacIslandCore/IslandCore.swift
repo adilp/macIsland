@@ -122,16 +122,23 @@ public final class IslandCore: SourceHandleTarget {
     /// Tear a source down uniformly — the one path for "a source goes away", whether
     /// the host saw its connection drop, the app is quitting, or a duplicate id was
     /// cleaned up (spec §5: a stopped source ≡ a dropped connection). Idempotent.
-    public func unregister(_ id: SourceID) async {
+    public func unregister(_ id: SourceID, revokingCards: Bool = false) async {
         guard let reg = registry[id] else { return }
         registry[id] = nil                       // remove first: routing + re-entrancy see it gone
         reg.startTask?.cancel()
         // Orphan policy (spec §5): default is LEAVE the cards (fire-and-forget posts
         // and exits; auto-revoking would delete the card the instant it appeared).
         // Opt-in `revokeOnDisconnect` auto-revokes instead — for live-state cards
-        // meaningless once the source is gone.
-        if reg.source.revokeOnDisconnect {
-            for card in stack.ordered where card.id.source == id { removeCard(card.id) }
+        // meaningless once the source is gone. `revokingCards` is the *caller* forcing
+        // it regardless — the module toggle's "off means gone", so a disabled module
+        // never strands a sticky pill behind it.
+        if revokingCards || reg.source.revokeOnDisconnect {
+            let mine = stack.ordered.filter { $0.id.source == id }
+            for card in mine { removeCard(card.id) }
+            if !mine.isEmpty {                   // a card left the screen → reconcile + re-render
+                alerter.reconcile(stack.ordered)
+                notifyChange()
+            }
         }
         await safely(id) { try await reg.source.stop() }
         Log.registry.info("unregistered source '\(id.raw, privacy: .public)'")
