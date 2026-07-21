@@ -17,8 +17,22 @@ swift test                     # the headless suite (no display, no network, no 
 swift run MacIslandApp         # launch the menu-bar agent (notch panel + sources)
 ```
 
-The app is an `LSUIElement` agent: no Dock icon, a menu-bar ✨ with **Quit**, and a
-resident pill at the notch. It's single-instance — a second launch exits immediately.
+The app is an `LSUIElement` agent: no Dock icon, a menu-bar ✨ with the **Modules** list
+and **Quit**, and a resident pill at the notch. It's single-instance — a second launch
+exits immediately.
+
+**Calendar access needs a real app bundle.** `swift run` launches a bare binary with no
+`Info.plist`, so macOS TCC suppresses the EventKit permission prompt — the "Connect
+Calendar…" module button silently no-ops. To exercise Calendar, build a bundle and launch
+it:
+
+```sh
+scripts/package-app.sh           # → .build/macIsland.app (Info.plist + usage string, ad-hoc signed)
+open .build/macIsland.app        # launch it; now the Calendar prompt appears
+```
+
+Everything else — GitHub CI/CD, the JSON ingress, the pill — works fine straight from
+`swift run`.
 
 ## Architecture at a glance
 
