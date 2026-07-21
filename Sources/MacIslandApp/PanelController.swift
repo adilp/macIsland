@@ -110,7 +110,10 @@ final class PanelController {
             let token = signposter.begin()
             NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = 0.32
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                // The iOS drawer curve (AUDIT §2). Shared verbatim with the SwiftUI
+                // content animation in IslandView so the window edge and the content
+                // move as one — the fix for the jarring pill→card expand (plan 001).
+                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0.72, 0, 1)
                 panel.animator().setFrame(frame, display: true)
             }, completionHandler: { [weak self] in
                 self?.signposter.end(token)

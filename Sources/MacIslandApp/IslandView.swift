@@ -106,7 +106,10 @@ struct IslandView: View {
             .padding(.horizontal, Self.sideMargin)
             .padding(.top, hasNotch ? 0 : Self.floatMargin)
             .padding(.bottom, Self.bottomMargin)
-            .animation(.spring(response: 0.34, dampingFraction: 0.82), value: cardKey)
+            // The iOS drawer curve (AUDIT §2), shared verbatim with the panel-resize
+            // animation in PanelController so window + content move as one coordinated
+            // unfold rather than a spring-vs-easeOut mismatch (plan 001).
+            .animation(.timingCurve(0.32, 0.72, 0, 1, duration: 0.32), value: cardKey)
     }
 
     private var sheet: some View {
@@ -196,10 +199,16 @@ struct IslandView: View {
                     onDismiss: onDismiss,
                     onAction: onAction
                 )
-                .transition(.asymmetric(
-                    insertion: .push(from: .top).combined(with: .opacity),
-                    removal: .opacity.combined(with: .scale(scale: 0.9, anchor: .top))
-                ))
+                // An activity card only ever appears via hover-reveal, so it reveals
+                // *in place* (opacity + a subtle scale) — the panel's downward growth
+                // is the motion, and it doesn't slide while the window grows. A regular
+                // card (a toast / completion arrival) still slides from the notch (plan 001).
+                .transition(card.notification.activity != nil
+                    ? .opacity.combined(with: .scale(scale: 0.97, anchor: .top))
+                    : .asymmetric(
+                        insertion: .push(from: .top).combined(with: .opacity),
+                        removal: .opacity.combined(with: .scale(scale: 0.9, anchor: .top))
+                    ))
             }
         }
         .padding(.horizontal, 4)
@@ -368,12 +377,16 @@ private struct CardRow: View {
     /// rejects any post that exceeds it, so this is structurally ≤ 2 buttons.
     private var actions: [Action] { card.notification.actions }
 
+    /// The icon colour: the card's `tint` (`#RRGGBB`) when it sets one — a green ✓ on a
+    /// successful deploy, a red ✗ on a failed one — else the default white.
+    private var iconColor: Color { content.tint.flatMap(Color.init(hexString:)) ?? .white }
+
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 13) {
                 icon
                     .frame(width: 28, height: 28)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(iconColor)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(content.title)
                         .font(.system(size: 16, weight: .semibold))
