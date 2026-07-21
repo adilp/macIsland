@@ -4,34 +4,53 @@ import MacIslandCore
 import MacIslandGitHub
 
 /// macIsland — the single-process, `LSUIElement` menu-bar agent. A resident
-/// notch-pinned `NSPanel` hosts the SwiftUI island; a `MenuBarExtra` gives the one
-/// affordance (Quit); the core is wired to a dev source so the walking skeleton is
-/// demoable. No Dock icon (activation policy `.accessory`), one instance at a time
-/// (unified spec §8.4).
+/// notch-pinned `NSPanel` hosts the SwiftUI island; a `MenuBarExtra` gives the settings
+/// surface (the Modules list + Quit); the core is wired to a dev source so the walking
+/// skeleton is demoable. No Dock icon (activation policy `.accessory`), one instance at a
+/// time (unified spec §8.4).
 @main
 struct MacIslandApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        // Boot step 2: the menu-bar item. Quit is the only entry for v1; launch-at-login
-        // and "Connect Calendar…" are deferred (unified spec §9). Exits cleanly.
+        // Boot step 2: the menu-bar item. Once boot completes the delegate publishes the
+        // module registry + core, and this flips from a bare Quit to the full Modules list
+        // (a `.window` style so we get real toggles/status rows, not plain menu items).
         MenuBarExtra("macIsland", systemImage: "sparkles") {
-            Button("Quit macIsland") { NSApp.terminate(nil) }
-                .keyboardShortcut("q")
+            if let registry = delegate.moduleRegistry, let core = delegate.islandCore {
+                ModulesMenu(registry: registry, core: core)
+            } else {
+                Button("Quit macIsland") { NSApp.terminate(nil) }
+                    .keyboardShortcut("q")
+            }
+        }
+        .menuBarExtraStyle(.window)
+
+        // The opt-in per-module settings surface (design: rich config panels open in a real
+        // Settings window, roomier than the dropdown). Empty in v1 — the built-ins need only
+        // buttons — so the hook ships and the first module with a panel just slots in.
+        Settings {
+            if let registry = delegate.moduleRegistry {
+                ModulesSettingsView(registry: registry)
+            }
         }
     }
 }
 
-/// The boot sequence and lifetime owner. `applicationDidFinishLaunching` runs the
-/// fixed order from unified spec §8.4: single-instance check → agent policy → core →
-/// panel → registry + dev source. (Alerter, Calendar, and the ingress host land in
-/// their own tickets.)
+/// The boot sequence and lifetime owner. `applicationDidFinishLaunching` runs the fixed
+/// order from unified spec §8.4: single-instance check → agent policy → core → panel →
+/// registry + dev source → modules → ingress. An `ObservableObject` so the `MenuBarExtra`
+/// picks up the `ModuleRegistry` the instant boot finishes.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private var instanceGuard: SingleInstanceGuard?
-    private var core: IslandCore?
     private var panelController: PanelController?
     private var ingressHost: IngressHost?
+
+    /// Published so the menu-bar scene re-renders into the Modules list once boot wires
+    /// them. Nil until `applicationDidFinishLaunching` completes.
+    @Published var islandCore: IslandCore?
+    @Published var moduleRegistry: ModuleRegistry?
 
     func applicationDidFinishLaunching(_ notification: Foundation.Notification) {
         // Single instance: acquire the lock before doing anything; a second instance
@@ -43,56 +62,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         instanceGuard = acquired
 
-        // Agent posture at runtime: a menu-bar-only app, no Dock icon, never the
-        // active app (the panel is a router, not a foreground window). This is the
-        // runtime equivalent of the `LSUIElement` / `LSMultipleInstancesProhibited`
-        // Info.plist keys, which only take effect once the app ships as a `.app`
-        // bundle — a packaging step deferred with repo layout (unified spec §9).
+        // Agent posture at runtime: a menu-bar-only app, no Dock icon, never the active
+        // app (the panel is a router, not a foreground window). Runtime equivalent of the
+        // `LSUIElement` Info.plist keys, which only take effect once the app ships as a
+        // `.app` bundle — a packaging step deferred with repo layout (unified spec §9).
         NSApp.setActivationPolicy(.accessory)
 
-        // The core hosts the panel, registry, and Alerter. Its clock and Alerter are
-        // built explicitly so the ring timeout shares the core's timeline and the
-        // Alerter uses real macOS system sounds (unified spec §8.1 / §8.4 step 3).
+        // The core hosts the panel, registry, and Alerter. Its clock and Alerter are built
+        // explicitly so the ring timeout shares the core's timeline and the Alerter uses
+        // real macOS system sounds (unified spec §8.1 / §8.4 step 3).
         let clock = SystemClock()
         let alerter = Alerter(audio: SystemAudioOutput(), clock: clock)   // step 3: the sound layer
         let core = IslandCore(clock: clock, alerter: alerter)
-        self.core = core
+        self.islandCore = core
         self.panelController = PanelController(core: core)   // step 1: panel → idle pill
         core.register(DevSource())                           // step 4: registry + dev source
 
-        // Step 4 (cont.): the built-in Calendar source — one launch-lifetime source
-        // registered after the panel exists (unified spec §8.4 / §5). It shares the
-        // core's clock so its meeting timers and the ring timeout live on one timeline;
-        // EventKit access is auto-requested on first launch and it stays inert if denied
-        // (Calendar spec §2). `EventKitStore` is the real EventKit seam.
-        core.register(CalendarSource(store: EventKitStore(), clock: clock))
+        // Step 4 (cont.): the built-in modules. Both were previously hand-registered here;
+        // now they go through the `ModuleRegistry` so the menu can show status + toggle
+        // them and their on/off survives launches. Each `Module` is a *recipe* that rebuilds
+        // a fresh source on enable and binds its status (and any action) to that instance.
+        let registry = ModuleRegistry(core: core, store: UserDefaultsModuleStore())
+        registry.add(Self.calendarModule(clock: clock))
+        registry.add(Self.githubModule(clock: clock))
+        registry.start()
+        self.moduleRegistry = registry
 
-        // Step 4 (cont.): the GitHub CI/CD deploy source. Watches example-org's five
-        // deploy workflows on `main` and surfaces each running deploy as a pill activity
-        // (a compact glyph + live clock), resolving to a green flash or a sticky ringing
-        // failure card. Reuses the user's existing `gh` login for the token; the local
-        // `pre-push` hook (docs/plans/…-design.md) touches `nudgeFile` to snap it to a
-        // fast poll the instant you push. Shares the core clock so its timers and the
-        // ring timeout live on one timeline.
-        let deployWorkflowIDs: Set<Int> = [
-            244604640,   // Deploy API
-            244604641,   // Deploy Web
-            246562591,   // Deploy Web (Democrat)
-            309459456,   // Mobile Native Build
-            309459458    // Mobile OTA Update
-        ]
-        core.register(GitHubActionsSource(
-            client: GitHubDeployClient(
-                owner: "example-org", repo: "example-org", branch: "main",
-                workflowIDs: deployWorkflowIDs
-            ),
-            clock: clock,
-            nudgeFile: AppSupport.directory.appendingPathComponent("github.poke")
-        ))
-
-        // Step 5 (last): the local JSON ingress. Bind the UDS and start accepting only
-        // now that the core can render — each connection mints a SocketSource (unified
-        // spec §8.4). A bind failure is logged, not fatal: the GUI still runs.
+        // Step 5 (last): the local JSON ingress. Bind the UDS and start accepting only now
+        // that the core can render — each connection mints a SocketSource (unified spec
+        // §8.4). A bind failure is logged, not fatal: the GUI still runs.
         let host = IngressHost(core: core)
         do {
             try host.start()
@@ -102,8 +100,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Clean shutdown (unified spec §8.4): stop accepting and unlink the socket file.
-    /// The single-instance lock is released by `SingleInstanceGuard`'s own teardown.
+    // MARK: - Built-in module definitions
+
+    /// The Calendar module: a fresh `CalendarSource` per enable, health from EventKit
+    /// authorization, and a "Connect Calendar…" action driving the same grant path as
+    /// first-run. EventKit access is process-global, so a fresh instance can request it.
+    private static func calendarModule(clock: any Clock) -> Module {
+        Module(id: SourceID(raw: "calendar"), displayName: "Calendar", icon: .symbol("calendar")) {
+            let src = CalendarSource(store: EventKitStore(), clock: clock)
+            return ActiveModule(
+                source: src,
+                status: { src.authorizationStatus == .authorized ? .ok : .needsAttention("Not connected") },
+                actions: [ModuleAction("Connect Calendar…") { _ = await src.requestAccess() }]
+            )
+        }
+    }
+
+    /// The GitHub CI/CD module: watches example-org's five `main` deploy workflows, mapping
+    /// the source's native `Status` onto the shared `ModuleStatus`. No button — `gh auth
+    /// login` is a terminal step, so `needsAuth`'s reason string carries the instruction.
+    private static func githubModule(clock: any Clock) -> Module {
+        let deployWorkflowIDs: Set<Int> = [
+            244604640,   // Deploy API
+            244604641,   // Deploy Web
+            246562591,   // Deploy Web (Democrat)
+            309459456,   // Mobile Native Build
+            309459458    // Mobile OTA Update
+        ]
+        return Module(id: SourceID(raw: "github"), displayName: "GitHub CI/CD",
+                      icon: .symbol("shippingbox.fill")) {
+            let src = GitHubActionsSource(
+                client: GitHubDeployClient(
+                    owner: "example-org", repo: "example-org", branch: "main",
+                    workflowIDs: deployWorkflowIDs
+                ),
+                clock: clock,
+                nudgeFile: AppSupport.directory.appendingPathComponent("github.poke")
+            )
+            return ActiveModule(source: src, status: {
+                switch src.status {
+                case .starting, .ok:    return .ok
+                case .needsAuth(let r): return .needsAttention(r)
+                case .error(let e):     return .needsAttention(e)
+                }
+            })
+        }
+    }
+
+    /// Clean shutdown (unified spec §8.4): stop accepting and unlink the socket file. The
+    /// single-instance lock is released by `SingleInstanceGuard`'s own teardown.
     func applicationWillTerminate(_ notification: Foundation.Notification) {
         ingressHost?.stop()
     }
