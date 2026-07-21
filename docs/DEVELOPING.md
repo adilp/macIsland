@@ -164,6 +164,71 @@ activity **leads** (ties break by render order, nearest-notch), and the rest col
 a minimal **"+N"**. Hovering expands them all into the stack, so there's no cram problem.
 Emit an activity and you get all of this for free.
 
+## Modules — user-facing integrations
+
+A **module** is the user-facing wrapper over a source: the thing that shows up in the
+menu-bar dropdown with a name, an icon, a status light, and an on/off switch that
+remembers itself across launches. A `NotificationSource` stays a pure, dumb transport —
+`Module` is an *additive* layer over it (Core: `Module.swift`, `ModuleRegistry.swift`).
+
+A `Module` is a **value you construct**, not a protocol you conform to. It's not
+"metadata + a live source" but "metadata + a **recipe**": `activate()` rebuilds a *fresh*
+source every time you switch the module on, because a stateful source (timers, a poll
+loop) can't be resumed after `stop()`. Switching off unregisters the source **and sweeps
+its cards** (off means gone).
+
+### The trivial form (zero screen code)
+
+The common case is ~5 lines. You get a menu row, a status light, and a persisted toggle
+for free:
+
+```swift
+registry.add(Module(id: SourceID(raw: "weather"), displayName: "Weather",
+                    icon: .symbol("cloud.rain"), makeSource: { WeatherSource() }))
+```
+
+### The rich form (health + actions)
+
+Bind health and any labeled buttons to the concrete instance — the source's own type is
+in scope inside the closure, so `status` can read whatever it exposes:
+
+```swift
+registry.add(Module(id: SourceID(raw: "calendar"), displayName: "Calendar",
+                    icon: .symbol("calendar")) {
+    let src = CalendarSource(store: EventKitStore(), clock: clock)
+    return ActiveModule(
+        source: src,
+        status: { src.authorizationStatus == .authorized ? .ok : .needsAttention("Not connected") },
+        actions: [ModuleAction("Connect Calendar…") { _ = await src.requestAccess() }]
+    )
+})
+```
+
+- **`status`** returns a `ModuleStatus` — `.ok` (🟢) or `.needsAttention("reason")` (🟡).
+  It's *pulled* when the menu opens, so keep it cheap (read a cached property, don't do IO).
+- **`actions`** are labeled buttons (a name + async work), rendered in the row. Use them for
+  simple affordances like "Connect…" or "Sign out" — not for a config form.
+
+### Registering & toggling
+
+Built-ins are registered in the boot sequence (`MacIslandApp.swift`) —
+`registry.add(Module(…))` then `registry.start()`. **Adding a module is adding a line.**
+The registry persists which modules are *disabled* (so new ones default on), and toggling
+drives `IslandCore.register` / `unregister(revokingCards: true)`.
+
+### Opt-in settings panel
+
+If a module needs real configuration (not just buttons), it opts into a settings panel that
+opens in the standard Settings window: add an entry to `ModuleSettingsPanels.byID`
+(`MacIslandApp/ModuleSettings.swift`) keyed by the module's id. The row then shows a
+"Settings…" button. This is opt-in — most modules never need it.
+
+### What's *not* a module
+
+External JSON-ingress producers (the socket path below) are **not** modules — they're
+ephemeral, per-connection, and not configurable. They appear read-only in the dropdown's
+"Connected" strip, but you can't toggle them.
+
 ## External sources (JSON ingress)
 
 Any tool in any language can push a notification over a Unix-domain socket — no Swift.
