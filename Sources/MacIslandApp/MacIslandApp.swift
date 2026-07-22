@@ -145,24 +145,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
     }
 
-    /// The GitHub CI/CD module: watches example-org's five `main` deploy workflows, mapping
-    /// the source's native `Status` onto the shared `ModuleStatus`. No button — `gh auth
-    /// login` is a terminal step, so `needsAuth`'s reason string carries the instruction.
+    /// The GitHub CI/CD module: watches the repo the user points it at (via the Settings
+    /// panel — `GitHubSettingsView`) and maps the source's native `Status` onto the shared
+    /// `ModuleStatus`. Config is read fresh on every `activate()`, so saving a repo and
+    /// calling `registry.reload` rebuilds the source against it. Until a repo is set the
+    /// module parks: a do-nothing source and a "set a repository" prompt, never polling.
     private static func githubModule(clock: any Clock) -> Module {
-        let deployWorkflowIDs: Set<Int> = [
-            244604640,   // Deploy API
-            244604641,   // Deploy Web
-            246562591,   // Deploy Web (Democrat)
-            309459456,   // Mobile Native Build
-            309459458    // Mobile OTA Update
-        ]
-        return Module(id: SourceID(raw: "github"), displayName: "GitHub CI/CD",
-                      icon: .symbol("shippingbox.fill")) {
+        Module(id: SourceID(raw: "github"), displayName: "GitHub CI/CD",
+               icon: .symbol("shippingbox.fill")) {
+            guard let config = UserDefaultsGitHubConfigStore().load() else {
+                // Unconfigured → park on the id (so the row still shows) and point the user
+                // at Settings. No client is built, so nothing is polled.
+                return ActiveModule(
+                    source: ParkedSource(id: SourceID(raw: "github")),
+                    status: { .needsAttention("Set a repository in Settings…") }
+                )
+            }
             let src = GitHubActionsSource(
-                client: GitHubDeployClient(
-                    owner: "example-org", repo: "example-org", branch: "main",
-                    workflowIDs: deployWorkflowIDs
-                ),
+                client: GitHubDeployClient(config: config),
                 clock: clock,
                 nudgeFile: AppSupport.directory.appendingPathComponent("github.poke")
             )
@@ -192,4 +192,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             attributes: [.posixPermissions: NSNumber(value: Int16(0o700))]
         )
     }
+}
+
+/// A do-nothing source for a module that's registered but not yet configured (e.g. the
+/// GitHub module before a repo is set). It occupies the module's id so the row still
+/// renders with its status, while polling nothing. `start` returns immediately.
+private struct ParkedSource: NotificationSource {
+    let id: SourceID
+    func start(_ handle: SourceHandle) async throws {}
 }

@@ -9,27 +9,15 @@ import Foundation
 /// `actor` for safe token caching across concurrent fetches; the token is re-pulled
 /// only on first use and after a 401 (rotation).
 public actor GitHubDeployClient: GitHubClient {
-    private let owner: String
-    private let repo: String
-    private let branch: String
-    /// The deploy workflow ids to keep (nil = keep every workflow). For example-org:
-    /// Deploy API / Deploy Web / Deploy Web (Democrat) / Mobile Native Build / Mobile OTA.
-    private let workflowIDs: Set<Int>?
+    /// Which repo/branch to watch and how to narrow the runs — a user value (see
+    /// `GitHubConfig`), so the same client serves any repo the user points it at.
+    private let config: GitHubConfig
     private let session: URLSession
 
     private var cachedToken: String?
 
-    public init(
-        owner: String,
-        repo: String,
-        branch: String = "main",
-        workflowIDs: Set<Int>? = nil,
-        session: URLSession = .shared
-    ) {
-        self.owner = owner
-        self.repo = repo
-        self.branch = branch
-        self.workflowIDs = workflowIDs
+    public init(config: GitHubConfig, session: URLSession = .shared) {
+        self.config = config
         self.session = session
     }
 
@@ -80,9 +68,9 @@ public actor GitHubDeployClient: GitHubClient {
     // MARK: - REST
 
     private func listRuns(token: String) async throws -> [RunSnapshot] {
-        var components = URLComponents(string: "https://api.github.com/repos/\(owner)/\(repo)/actions/runs")!
+        var components = URLComponents(string: "https://api.github.com/repos/\(config.owner)/\(config.repo)/actions/runs")!
         components.queryItems = [
-            URLQueryItem(name: "branch", value: branch),
+            URLQueryItem(name: "branch", value: config.branch),
             URLQueryItem(name: "per_page", value: "40")
         ]
         guard let url = components.url else { throw GitHubClientError.transport("bad url") }
@@ -111,7 +99,7 @@ public actor GitHubDeployClient: GitHubClient {
         do { decoded = try Self.decoder.decode(RunsEnvelope.self, from: data) }
         catch { throw GitHubClientError.transport("decode: \(error)") }
 
-        return decoded.workflow_runs.compactMap { $0.snapshot(keeping: workflowIDs) }
+        return decoded.workflow_runs.compactMap { $0.snapshot(matching: config) }
     }
 
     private static let decoder: JSONDecoder = {
@@ -127,7 +115,6 @@ public actor GitHubDeployClient: GitHubClient {
     private struct WireRun: Decodable {
         let id: Int
         let name: String?
-        let workflow_id: Int
         let status: String?
         let conclusion: String?
         let head_branch: String?
@@ -139,13 +126,14 @@ public actor GitHubDeployClient: GitHubClient {
 
         struct Actor: Decodable { let login: String }
 
-        func snapshot(keeping ids: Set<Int>?) -> RunSnapshot? {
-            if let ids, !ids.contains(workflow_id) { return nil }
+        func snapshot(matching config: GitHubConfig) -> RunSnapshot? {
             guard let url = URL(string: html_url) else { return nil }
+            let workflowName = name ?? "Workflow"
+            guard config.matchesWorkflow(named: workflowName) else { return nil }
             let status = RunStatus(githubStatus: status ?? "")
             return RunSnapshot(
                 id: id,
-                workflowName: name ?? "Workflow",
+                workflowName: workflowName,
                 status: status,
                 conclusion: status == .completed ? RunConclusion(githubConclusion: conclusion ?? "") : nil,
                 branch: head_branch ?? "",

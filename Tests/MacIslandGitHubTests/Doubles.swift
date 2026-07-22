@@ -49,8 +49,8 @@ func ghRun(
         sha: "abcdef1234567890",
         startedAt: startedAt,
         completedAt: completedAt,
-        htmlURL: URL(string: "https://github.com/example-org/example-org/actions/runs/\(id)")!,
-        actor: "adilp"
+        htmlURL: URL(string: "https://github.com/octocat/Hello-World/actions/runs/\(id)")!,
+        actor: "octocat"
     )
 }
 
