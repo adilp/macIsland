@@ -17,7 +17,10 @@ Open the menu-bar ✨ to see your modules — each with a status light and an on
 - **Calendar** — click **Connect Calendar…** to grant EventKit access; upcoming meetings appear on the notch.
 - **GitHub CI/CD** — open its **Settings…** and enter the repo to watch (owner, repo, branch, and an optional
   workflow-name filter). Auth comes from your own `gh` login (`gh auth token`) — macIsland reads that token live
-  and never stores one. Running deploys show as a live pill activity; failures ring.
+  and never stores one. Running deploys show as a live pill activity; failures ring. For **push-instant**
+  activity, install the pre-push nudge in each clone you push from (two-line install in the header of
+  [`Scripts/macisland-prepush-nudge.sh`](Scripts/macisland-prepush-nudge.sh)) — without it a fresh run waits
+  for the next idle poll, up to five minutes.
 
 ## Layout
 
