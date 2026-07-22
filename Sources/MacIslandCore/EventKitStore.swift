@@ -12,7 +12,11 @@ import EventKit
 /// themselves pure and headless-testable.
 @MainActor
 public final class EventKitStore: MeetingStore {
-    private let store = EKEventStore()
+    // `EKEventStore` is thread-safe but only annotated `Sendable` in newer SDKs. Under the
+    // Xcode 16 / macOS 15 SDK (CI, and most contributors), passing this main-actor-isolated
+    // value into the `nonisolated` async `requestFullAccessToEvents()` is a Swift 6 data-race
+    // error; `nonisolated(unsafe)` vouches for its thread-safety and compiles on every SDK.
+    private nonisolated(unsafe) let store = EKEventStore()
     private var observer: NSObjectProtocol?
 
     public init() {}
