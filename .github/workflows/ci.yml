@@ -21,8 +21,9 @@ concurrency:
 jobs:
   build-and-test:
     name: Build & unit tests
-    # macOS 14 (Sonoma) — the project's min deployment target (spec §8.2).
-    runs-on: macos-14
+    # macos-15 for its default Xcode 16 toolchain (Swift 6, which Package.swift requires);
+    # the built binary still targets macOS 14 (Sonoma), the project's min deployment target.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Swift version
@@ -34,7 +35,7 @@ jobs:
 
   performance-budget:
     name: Performance budget gates
-    runs-on: macos-14
+    runs-on: macos-15   # Swift 6 toolchain (see build-and-test)
     steps:
       - uses: actions/checkout@v4
       # The reliably-CI-measurable budgets (spec §5.1), run as their own required check
