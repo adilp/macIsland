@@ -91,6 +91,9 @@ public actor GitHubDeployClient: GitHubClient {
         if http.statusCode == 401 || http.statusCode == 403 {
             throw GitHubClientError.notAuthenticated
         }
+        if http.statusCode == 404 {
+            throw GitHubClientError.repositoryNotFound   // bad owner/repo, or no access
+        }
         guard (200..<300).contains(http.statusCode) else {
             throw GitHubClientError.transport("HTTP \(http.statusCode)")
         }

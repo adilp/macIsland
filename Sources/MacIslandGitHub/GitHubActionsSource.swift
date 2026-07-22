@@ -59,7 +59,10 @@ public final class GitHubActionsSource: NotificationSource {
     /// re-adopted as a fresh activity, and completed runs we've already handled (or
     /// that finished before we started) are ignored.
     private var active: [Int: RunStatus] = [:]
-    private var authCardPosted = false
+    /// The body of the one "something's wrong" card currently shown (auth or repo-not-found),
+    /// or nil when healthy. Tracked so an unchanged problem never re-posts (no idle churn),
+    /// and a recovered fetch clears whichever problem was up.
+    private var shownProblemBody: String?
 
     public private(set) var status: Status = .starting
     /// The interval the next poll is scheduled at — the observable output of the
@@ -76,7 +79,7 @@ public final class GitHubActionsSource: NotificationSource {
     #endif
     private var nudgeSource: (any DispatchSourceFileSystemObject)?
 
-    private static let authCardValue = "auth"
+    private static let problemCardValue = "status"
 
     public init(
         client: any GitHubClient,
@@ -125,6 +128,9 @@ public final class GitHubActionsSource: NotificationSource {
             runs = try await client.fetchDeployRuns()
         } catch GitHubClientError.notAuthenticated {
             onAuthFailure()
+            return
+        } catch GitHubClientError.repositoryNotFound {
+            onRepoNotFound()
             return
         } catch {
             // Transport failure: silent no-op. Keep all state; do NOT revoke or infer
@@ -260,13 +266,23 @@ public final class GitHubActionsSource: NotificationSource {
 
     private func onAuthFailure() {
         status = .needsAuth("Run `gh auth login`")
-        guard !authCardPosted else { return }   // one card, never spam
-        authCardPosted = true
+        showProblem("Run `gh auth login` to watch deploys")
+    }
+
+    private func onRepoNotFound() {
+        status = .error("Repository not found")
+        showProblem("Repository not found — check it in Settings")
+    }
+
+    /// Show the single "Deploy watch off" info card, upserted by id. Guarded on the body so
+    /// an unchanged problem never re-posts (no idle churn); switching problems updates it.
+    private func showProblem(_ body: String) {
+        guard shownProblemBody != body else { return }
+        shownProblemBody = body
         handle?.post(
-            Content(title: "Deploy watch off",
-                    body: "Run `gh auth login` to watch deploys",
+            Content(title: "Deploy watch off", body: body,
                     icon: .symbol("exclamationmark.triangle.fill")),
-            value: Self.authCardValue,
+            value: Self.problemCardValue,
             presence: .sticky,
             alerting: .silent
         )
@@ -274,9 +290,9 @@ public final class GitHubActionsSource: NotificationSource {
 
     private func onFetchSucceeded() {
         status = .ok
-        if authCardPosted {                      // self-healed → clear the info card
-            handle?.revoke(Self.authCardValue)
-            authCardPosted = false
+        if shownProblemBody != nil {             // self-healed → clear the info card
+            handle?.revoke(Self.problemCardValue)
+            shownProblemBody = nil
         }
     }
 

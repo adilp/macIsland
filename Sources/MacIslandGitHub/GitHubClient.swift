@@ -82,8 +82,11 @@ public enum RunConclusion: Sendable, Equatable {
 /// surfaces a status + one info card and keeps retrying; `transport` is a **silent
 /// no-op** — a completion is *never* inferred from a failed request.
 public enum GitHubClientError: Error, Equatable {
-    /// `gh` is missing / logged out, or the API rejected the token (401).
+    /// `gh` is missing / logged out, or the API rejected the token (401/403).
     case notAuthenticated
+    /// The configured repo doesn't exist or the token can't see it (404) — a config
+    /// problem the user must fix in Settings, surfaced (not a silent blip).
+    case repositoryNotFound
     /// Network down, DNS, timeout, 5xx, or an unparseable body. Retry next tick.
     case transport(String)
 }

@@ -225,14 +225,44 @@ final class GitHubActionsSourceTests: XCTestCase {
                              .runs([ghRun(1, .active, startedAt: t)])])
         await h.source.awaitPoll(count: 1)
         XCTAssertEqual(h.source.status, .needsAuth("Run `gh auth login`"))
-        XCTAssertNotNil(card(h.core, "auth"))
+        XCTAssertNotNil(card(h.core, "status"))
 
         await h.source.pollNow()                                 // still not authed
-        XCTAssertEqual(h.core.ordered.filter { $0.id.value == "auth" }.count, 1)  // no second card
+        XCTAssertEqual(h.core.ordered.filter { $0.id.value == "status" }.count, 1)  // no second card
 
         await h.source.pollNow()                                 // authed → clears + adopts run
-        XCTAssertNil(card(h.core, "auth"))
+        XCTAssertNil(card(h.core, "status"))
         XCTAssertEqual(h.source.status, .ok)
         XCTAssertNotNil(card(h.core, "run-1"))
+    }
+
+    // 13 — a 404 (bad repo / no access) surfaces as an error + info card, not a silent OK,
+    // and self-heals if the repo becomes reachable.
+    func test_repositoryNotFound_surfacesError_thenSelfHeals() async {
+        let t = Date(timeIntervalSinceReferenceDate: 9_000)
+        let h = makeHarness([.fail(.repositoryNotFound),
+                             .runs([ghRun(1, .active, startedAt: t)])])
+        await h.source.awaitPoll(count: 1)
+        XCTAssertEqual(h.source.status, .error("Repository not found"))
+        XCTAssertNotNil(card(h.core, "status"))
+        XCTAssertEqual(h.audio.startCount, 0)                    // never rings
+
+        await h.source.pollNow()                                 // repo reachable now → clears
+        XCTAssertNil(card(h.core, "status"))
+        XCTAssertEqual(h.source.status, .ok)
+        XCTAssertNotNil(card(h.core, "run-1"))
+    }
+
+    // 14 — switching problems (auth → repo-not-found) updates the one card in place.
+    func test_problemCard_switchesInPlace_notStacked() async {
+        let h = makeHarness([.fail(.notAuthenticated),
+                             .fail(.repositoryNotFound)])
+        await h.source.awaitPoll(count: 1)
+        await h.source.pollNow()
+
+        XCTAssertEqual(h.core.ordered.filter { $0.id.value == "status" }.count, 1)  // still one card
+        XCTAssertEqual(h.source.status, .error("Repository not found"))
+        XCTAssertEqual(card(h.core, "status")?.notification.content.body,
+                       "Repository not found — check it in Settings")
     }
 }
