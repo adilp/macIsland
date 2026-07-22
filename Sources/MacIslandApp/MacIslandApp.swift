@@ -76,6 +76,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @Published var moduleRegistry: ModuleRegistry?
 
     func applicationDidFinishLaunching(_ notification: Foundation.Notification) {
+        // Migrate any values written to the old `.standard` / named-suite domains before
+        // anything reads from them — this must be the very first settings-touching call.
+        AppDefaults.migrateLegacyDomains()
+
         // Single instance: acquire the lock before doing anything; a second instance
         // exits immediately (covers a Finder relaunch as well as terminal launches).
         createAppSupportDirectory()
@@ -105,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // now they go through the `ModuleRegistry` so the menu can show status + toggle
         // them and their on/off survives launches. Each `Module` is a *recipe* that rebuilds
         // a fresh source on enable and binds its status (and any action) to that instance.
-        let registry = ModuleRegistry(core: core, store: UserDefaultsModuleStore())
+        let registry = ModuleRegistry(core: core, store: UserDefaultsModuleStore(defaults: AppDefaults.shared))
         registry.add(Self.calendarModule(clock: clock))
         registry.add(Self.githubModule(clock: clock))
         registry.start()
@@ -153,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private static func githubModule(clock: any Clock) -> Module {
         Module(id: SourceID(raw: "github"), displayName: "GitHub CI/CD",
                icon: .symbol("shippingbox.fill")) {
-            guard let config = UserDefaultsGitHubConfigStore().load() else {
+            guard let config = UserDefaultsGitHubConfigStore(defaults: AppDefaults.shared).load() else {
                 // Unconfigured → park on the id (so the row still shows) and point the user
                 // at Settings. No client is built, so nothing is polled.
                 return ActiveModule(

@@ -19,7 +19,7 @@ struct GitHubSettingsView: View {
     @State private var error: String?
     @State private var saved = false
 
-    private let store = UserDefaultsGitHubConfigStore()
+    private let store = UserDefaultsGitHubConfigStore(defaults: AppDefaults.shared)
 
     var body: some View {
         Form {
