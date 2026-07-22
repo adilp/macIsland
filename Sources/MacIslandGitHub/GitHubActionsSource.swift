@@ -127,14 +127,17 @@ public final class GitHubActionsSource: NotificationSource {
         do {
             runs = try await client.fetchDeployRuns()
         } catch GitHubClientError.notAuthenticated {
+            Log.github.notice("poll: not authenticated — deploy watch parked")
             onAuthFailure()
             return
         } catch GitHubClientError.repositoryNotFound {
+            Log.github.error("poll: repository not found")
             onRepoNotFound()
             return
         } catch {
             // Transport failure: silent no-op. Keep all state; do NOT revoke or infer
             // a completion. Status is left as-is so a blip doesn't flip us to error.
+            Log.github.error("poll failed: \(String(describing: error), privacy: .public)")
             return
         }
         onFetchSucceeded()

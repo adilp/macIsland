@@ -19,4 +19,6 @@ public enum Log {
     public static let ingress = Logger(subsystem: subsystem, category: "ingress")
     /// The built-in Calendar source — EventKit access, meeting scheduling, self-revoke.
     public static let calendar = Logger(subsystem: subsystem, category: "calendar")
+    /// The GitHub Actions source — polling, backoff, auth-state transitions.
+    public static let github = Logger(subsystem: subsystem, category: "github")
 }
