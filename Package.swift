@@ -2,8 +2,7 @@
 import PackageDescription
 
 // macIsland — a light, dependency-free macOS notch dynamic-island notifier.
-// Design source of truth: .scratch/macisland/assets/08-unified-design-architecture-spec.md
-// Build backlog: tickets.md
+// Developer & extension guide: docs/DEVELOPING.md
 
 let package = Package(
     name: "macIsland",

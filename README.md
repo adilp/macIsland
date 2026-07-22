@@ -1,17 +1,23 @@
 # macIsland
 
 A light, dependency-free, open-source macOS **dynamic-island notifier** — an always-resident pill at the notch
-that unrolls downward into a per-row-dismissible **stack** of notification cards, fed by a built-in **Calendar**
-source and a **local JSON ingress** any tool can write to. Notifications coexist (a second alert never erases the
-first), sticky things stay pinned above transient toasts, and an imminent meeting rings with a one-click Join.
+that unrolls downward into a per-row-dismissible **stack** of notification cards. Notifications coexist (a second
+alert never erases the first), sticky things stay pinned above transient toasts, and an imminent meeting rings with
+a one-click Join.
 
-> **Status:** greenfield build. The design is locked; the work is sliced into tracer-bullet tickets.
+It ships with two built-in **modules** — **Calendar** (upcoming meetings) and **GitHub CI/CD** (deploy activity for
+a repo you point it at) — plus a **local JSON ingress** any tool, in any language, can write to. Everything that
+puts something on the island is a `NotificationSource`, so adding your own integration is adding a source (see
+**[`docs/DEVELOPING.md`](docs/DEVELOPING.md)**).
 
-## Where things are
+## Modules
 
-- **Build backlog:** [`tickets.md`](tickets.md) — work the frontier one ticket at a time with `/implement`.
-- **Design (source of truth):** [`.scratch/macisland/assets/08-unified-design-architecture-spec.md`](.scratch/macisland/assets/08-unified-design-architecture-spec.md) and the seven section-specs it links.
-- **Build spec:** [`.scratch/macisland/issues/spec-build-macisland-v1.md`](.scratch/macisland/issues/spec-build-macisland-v1.md) (scope, user stories, test seams).
+Open the menu-bar ✨ to see your modules — each with a status light and an on/off switch that survives launches.
+
+- **Calendar** — click **Connect Calendar…** to grant EventKit access; upcoming meetings appear on the notch.
+- **GitHub CI/CD** — open its **Settings…** and enter the repo to watch (owner, repo, branch, and an optional
+  workflow-name filter). Auth comes from your own `gh` login (`gh auth token`) — macIsland reads that token live
+  and never stores one. Running deploys show as a live pill activity; failures ring.
 
 ## Layout
 
@@ -63,4 +69,10 @@ swift test
 swift run MacIslandApp     # launch the menu-bar agent
 ```
 
-See [`docs/DEVELOPING.md`](docs/DEVELOPING.md) to go further.
+To exercise Calendar (its permission prompt needs a real app bundle), run
+`Scripts/package-app.sh` and open the resulting `.build/macIsland.app` — see
+[`docs/DEVELOPING.md`](docs/DEVELOPING.md) to go further.
+
+## License
+
+[MIT](LICENSE).

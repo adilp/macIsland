@@ -635,12 +635,12 @@ registry.add(Module(id: SourceID(raw: "calendar"), displayName: "Calendar",
 })
 
 // GitHub: map its Status; no button (gh login is a terminal step — the reason string says so).
-let deployWorkflowIDs: Set<Int> = [244604640, 244604641, 246562591, 309459456, 309459458]
+// The repo/branch/workflow filter come from the user's saved GitHubConfig (see GitHubSettingsView).
 registry.add(Module(id: SourceID(raw: "github"), displayName: "GitHub CI/CD",
                     icon: .symbol("shippingbox.fill")) {
+    let config = UserDefaultsGitHubConfigStore().load()!   // parks until configured; see MacIslandApp
     let src = GitHubActionsSource(
-        client: GitHubDeployClient(owner: "example-org", repo: "example-org", branch: "main",
-                                   workflowIDs: deployWorkflowIDs),
+        client: GitHubDeployClient(config: config),
         clock: clock,
         nudgeFile: AppSupport.directory.appendingPathComponent("github.poke"))
     return ActiveModule(source: src, status: {

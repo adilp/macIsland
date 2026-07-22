@@ -2,11 +2,11 @@
 
 **Date:** 2026-07-20
 **Status:** Design locked, ready for implementation planning
-**Repo watched:** `example-org/example-org` (private)
+**Repo watched:** any repo the user configures (owner / repo / branch / workflow filter)
 
 ## Goal
 
-Surface example-org deploys on the island so you don't have to go check on CI.
+Surface a repo's deploys on the island so you don't have to go check on CI.
 While a deploy runs, the notch shows a compact, iOS-Live-Activity-style **peek**
 (icon + live elapsed clock). On finish it resolves into a persistent completion card —
 green on success, a red ringing one on failure — that stays until you dismiss it.
@@ -147,7 +147,7 @@ failures that finished while the app was off.
 - **Cadence:** any active run → next poll ~15s; otherwise back off 60s → 2min →
   5min cap, snapping back to 15s the instant a run appears.
 - **Rate limit:** non-issue — 5000 req/hr authenticated; even 15s polling is ~240/hr.
-- **Push nudge (Option 2):** a **local** `pre-push` git hook in example-org `touch`es
+- **Push nudge (Option 2):** a **local** `pre-push` git hook in your repo `touch`es
   a watched file the moment *you* push; the source watches it via `DispatchSource`
   and calls `pollNow()` → immediate fast-poll. So your own deploys are caught
   instantly and idle backoff only ever governs *teammates'* deploys (result card a
@@ -157,7 +157,7 @@ failures that finished while the app was off.
     target is absent, runs backgrounded with a sub-second timeout, and always exits
     `0` — it can never block or slow a push.
   - **No installer** — `Scripts/macisland-prepush-nudge.sh` is the ~5-line hook; copy
-    it into example-org's `.git/hooks/pre-push` once (`cp … .git/hooks/pre-push &&
+    it into your repo's `.git/hooks/pre-push` once (`cp … .git/hooks/pre-push &&
     chmod +x .git/hooks/pre-push`). A plain file `touch` is instant and local, so the
     hook needs no backgrounding — it no-ops when the island isn't running and always
     exits 0.

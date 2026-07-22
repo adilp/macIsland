@@ -323,8 +323,8 @@ content). Animation work is tracked in [`plans/`](../plans/).
 
 ## Where to look next
 
-- **Design source of truth:** `docs/plans/2026-07-20-github-cicd-deploy-activity-design.md`
-  and the specs under `.scratch/macisland/`.
+- **Design docs:** the plans under [`docs/plans/`](plans/) — the GitHub CI/CD source and
+  the modules system each have a design write-up.
 - **Performance budget & gates:** `PERFORMANCE.md`.
 - **Coding style:** match the surrounding code — dense doc-comments that explain *why*,
   `@MainActor` sources, injected seams, and Core staying dependency-free and

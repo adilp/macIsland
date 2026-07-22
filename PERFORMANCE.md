@@ -4,9 +4,6 @@ macIsland's product promise is that it is **performant and light**. This documen
 turns that promise into checks: what is gated automatically in CI, the manual
 pre-release step CI cannot do reliably, and how each guiding invariant is verified.
 
-Design source of truth: [`07-performance-and-idle-budget-spec.md`](.scratch/macisland/assets/07-performance-and-idle-budget-spec.md)
-and [`08-unified-design-architecture-spec.md`](.scratch/macisland/assets/08-unified-design-architecture-spec.md) §6.
-
 ## The one-line contract
 
 > **At rest, macIsland does nothing** — 0.0% CPU, no periodic wakeups, ≤100 MB. It
