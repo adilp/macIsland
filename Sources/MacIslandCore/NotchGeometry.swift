@@ -60,6 +60,63 @@ public struct ScreenMetrics: Equatable, Sendable {
 /// capped at `min(content, ~72% screen)`").
 public let defaultMaxHeightFraction: CGFloat = 0.72
 
+// MARK: - Island width regime
+
+/// The full downward-sheet width — enough to seat a card's icon, title/body, and
+/// action buttons (spec §4). The `expanded` posture uses this floor.
+public let expandedIslandWidth: CGFloat = 440
+/// Extra width the expanded sheet keeps beyond an unusually wide notch, so the sheet
+/// always clears the notch even on a display whose notch is wider than the base sheet
+/// (spec §1: "island width ≥ notch width").
+public let expandedNotchHugMargin: CGFloat = 40
+/// How far the compact activity `peek` widens past the notch — room for a leading
+/// glyph and a trailing live clock without opening the whole sheet. Deliberately
+/// modest so a running activity nudges the pill wider rather than throwing it open.
+public let peekWideningPastNotch: CGFloat = 100
+/// The idle/peek width used on a **non-notched** display, where there's no notch to
+/// hug: a small floating pill under the menu bar instead of a 440-pt bar.
+public let floatingPillWidth: CGFloat = 190
+
+/// How wide the island should be for what it's currently showing. The three postures
+/// mirror the view's own branching so the controller (which sizes the window) and the
+/// view (which lays out the content) always agree on one width:
+///
+/// - `bare` — nothing running: **hug the notch** so the idle island reads as the notch
+///   itself, not a fat pill (the fix for the too-wide idle bar).
+/// - `peek` — an activity is running but collapsed: a modest widen past the notch.
+/// - `expanded` — real cards are on show (a toast, or everything unrolled on hover):
+///   the full downward sheet.
+public enum IslandWidthRegime: Equatable, Sendable {
+    case bare
+    case peek
+    case expanded
+}
+
+/// Pick the width regime from the same inputs the view branches on. Collapsed, only
+/// non-activity cards are "visible" in the sheet (activities live in the pill); on
+/// hover everything unrolls. So: anything visible in the sheet ⇒ `expanded`; else a
+/// running activity ⇒ `peek`; else `bare`. Pure — the single source of truth the
+/// controller and `IslandView` both read.
+public func islandWidthRegime(cards: [PlacedNotification], isHovering: Bool) -> IslandWidthRegime {
+    let visible = isHovering ? cards : cards.filter { $0.notification.activity == nil }
+    if !visible.isEmpty { return .expanded }
+    return cards.contains(where: { $0.notification.activity != nil }) ? .peek : .bare
+}
+
+/// The island width in points for a regime on a given display. Every posture honours
+/// "width ≥ notch width" (spec §1): `bare` equals it, `peek`/`expanded` exceed it.
+/// Without a notch the pill floats at a compact fixed width.
+public func islandWidth(for regime: IslandWidthRegime, on metrics: ScreenMetrics) -> CGFloat {
+    switch regime {
+    case .bare:
+        return metrics.notchWidth ?? floatingPillWidth
+    case .peek:
+        return (metrics.notchWidth ?? floatingPillWidth) + peekWideningPastNotch
+    case .expanded:
+        return max(expandedIslandWidth, (metrics.notchWidth ?? 0) + expandedNotchHugMargin)
+    }
+}
+
 /// The top-center anchor frame for an island of `islandSize` on `metrics`.
 ///
 /// Bottom-left origin: the island is pinned to the **top** of the screen

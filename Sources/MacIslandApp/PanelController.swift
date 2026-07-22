@@ -41,7 +41,7 @@ final class PanelController {
         self.core = core
         // Placeholder rootViews; `render()` replaces them with the real snapshot.
         let placeholder = IslandView(
-            cards: [], countdowns: [:], width: 300, topInset: 0, hasNotch: false,
+            cards: [], countdowns: [:], width: 300, outerWidth: 440, topInset: 0, hasNotch: false,
             isHovering: false, panelMaxHeight: nil, liveSources: [],
             onDismiss: { _ in }, onAction: { _, _ in }, onHoverChange: { _ in }
         )
@@ -73,15 +73,23 @@ final class PanelController {
     private func render() {
         guard let (_, metrics) = currentTargetScreen() else { return }
 
-        let width = islandWidth(for: metrics)
+        // The sheet body width follows what's on show (bare hugs the notch, peek widens
+        // a touch, cards open the full sheet); the *window* width is fixed at the widest
+        // (expanded) so the sheet morphs inside a stable frame — no horizontal window
+        // resize, so nothing clips the sheet mid-expand.
+        let regime = islandWidthRegime(cards: core.ordered, isHovering: isHovering)
+        let width = islandWidth(for: regime, on: metrics)
+        let outerWidth = islandWidth(for: .expanded, on: metrics)
         let topInset = notchClearance(for: metrics)
         let countdowns = buildCountdowns()
 
         // Measure the natural (uncapped, no-scroll) content height on the offscreen
         // view — always plain, so the measurement is deterministic and never the stale
-        // `0` a plain/scroll flip on the *displayed* view would yield.
+        // `0` a plain/scroll flip on the *displayed* view would yield. Measured at the
+        // stable `outerWidth`, so the window width never changes and only its height (and
+        // the SwiftUI sheet width) animate.
         measuringView.rootView = makeView(
-            metrics: metrics, width: width, topInset: topInset,
+            metrics: metrics, width: width, outerWidth: outerWidth, topInset: topInset,
             countdowns: countdowns, panelMaxHeight: nil
         )
         measuringView.layoutSubtreeIfNeeded()
@@ -94,7 +102,7 @@ final class PanelController {
         let cap = metrics.frame.height * defaultMaxHeightFraction
         let overflow = naturalSize.height > cap
         hostingView.rootView = makeView(
-            metrics: metrics, width: width, topInset: topInset,
+            metrics: metrics, width: width, outerWidth: outerWidth, topInset: topInset,
             countdowns: countdowns, panelMaxHeight: overflow ? cap : nil
         )
 
@@ -126,13 +134,14 @@ final class PanelController {
 
     /// Build the immutable snapshot view for the current stack.
     private func makeView(
-        metrics: ScreenMetrics, width: CGFloat, topInset: CGFloat,
+        metrics: ScreenMetrics, width: CGFloat, outerWidth: CGFloat, topInset: CGFloat,
         countdowns: [NotificationID: Countdown], panelMaxHeight: CGFloat?
     ) -> IslandView {
         IslandView(
             cards: core.ordered,
             countdowns: countdowns,
             width: width,
+            outerWidth: outerWidth,
             topInset: topInset,
             hasNotch: metrics.hasNotch,
             isHovering: isHovering,
@@ -169,14 +178,6 @@ final class PanelController {
         isHovering = hovering
         core.setHovering(hovering)
         render()
-    }
-
-    /// Island width: a base pill width, widened to at least the notch width (plus a
-    /// small hug margin) so the sheet visually emerges from the notch (spec §4).
-    private func islandWidth(for metrics: ScreenMetrics) -> CGFloat {
-        let base: CGFloat = 440
-        guard let notch = metrics.notchWidth else { return base }
-        return max(base, notch + 40)
     }
 
     /// Top space reserved so card content clears the physical notch band; a small

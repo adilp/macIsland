@@ -24,8 +24,15 @@ struct IslandView: View {
     /// Per-transient-card countdown, sampled by the core at snapshot time — drives the
     /// depleting bar (and its hover freeze). Sticky cards are absent from the map.
     let countdowns: [NotificationID: Countdown]
-    /// Panel width, ≥ the notch width so the sheet emerges from the notch.
+    /// The sheet (black body) width for the current posture: hugs the notch when idle,
+    /// widens for a running-activity peek, opens to the full sheet with cards. Morphs
+    /// *inside* `outerWidth` via a SwiftUI frame animation, so the window never resizes
+    /// horizontally and never clips the sheet mid-expand.
     let width: CGFloat
+    /// The window's fixed content width — the widest the sheet ever gets (the expanded
+    /// sheet). The sheet is centred in this stable region, so the black body is free to
+    /// grow/shrink without the window edge ever chopping its rounded corners.
+    let outerWidth: CGFloat
     /// Vertical space reserved at the top so content clears the physical notch band.
     let topInset: CGFloat
     /// Whether the home display has a notch — the card hugs the screen top when it
@@ -57,7 +64,7 @@ struct IslandView: View {
     // to the padded content, so these are real.
     private static let sideMargin: CGFloat = 16
     private static let bottomMargin: CGFloat = 20
-    private static let floatMargin: CGFloat = 10     // top gap on non-notched displays
+    private static let floatMargin: CGFloat = 6      // top gap on non-notched displays
     private static let contentBottomPad: CGFloat = 4 // pad below the card area, above the margin
 
     // Gutter between cards — one consistent gap so the column reads as a single sheet,
@@ -103,6 +110,12 @@ struct IslandView: View {
             .onContinuousHover { phase in
                 if case .active = phase { onHoverChange(true) } else { onHoverChange(false) }
             }
+            // Centre the morphing sheet in a stable-width region == the window's fixed
+            // content width. The window never changes width, so the sheet's rounded body
+            // is never clipped by the window edge as it grows — the width change is a
+            // smooth SwiftUI frame animation inside a still container, not an AppKit
+            // window resize fighting the content (the fix for the jarring hover expand).
+            .frame(width: outerWidth)
             .padding(.horizontal, Self.sideMargin)
             .padding(.top, hasNotch ? 0 : Self.floatMargin)
             .padding(.bottom, Self.bottomMargin)
@@ -110,6 +123,9 @@ struct IslandView: View {
             // animation in PanelController so window + content move as one coordinated
             // unfold rather than a spring-vs-easeOut mismatch (plan 001).
             .animation(.timingCurve(0.32, 0.72, 0, 1, duration: 0.32), value: cardKey)
+            // Morph the sheet width (bare → peek → expanded) on that same drawer curve,
+            // so width, height, and content all unfold as one motion.
+            .animation(.timingCurve(0.32, 0.72, 0, 1, duration: 0.32), value: width)
     }
 
     private var sheet: some View {
@@ -126,17 +142,25 @@ struct IslandView: View {
         .background(background)
     }
 
-    // The resident idle state: a compact pill hugging the notch. Static — no
-    // animation, no timeline — so the app is quiescent at idle (spec §5).
+    // A short strip of the idle pill left visible *below* the notch band — just enough
+    // to seat the grabber, so the resting island reads as the notch with a small lip
+    // rather than a fat pill.
+    private static let idleChin: CGFloat = 10
+
+    // The resident idle state: the island hugs the notch. Its width is the `bare`
+    // regime (== the notch width), so the black body sits within the notch cutout and
+    // reads as the notch itself; only a short rounded chin peeks below, carrying a
+    // faint grabber that says the island is here and hoverable. Static — no animation,
+    // no timeline — so the app is quiescent at idle (spec §5 / perf I‑5).
     private var idlePill: some View {
         Color.clear
-            .frame(height: max(topInset, 14))
+            .frame(height: max(topInset, 14) + Self.idleChin)
             .frame(maxWidth: .infinity)
             .overlay(alignment: .bottom) {
                 Capsule(style: .continuous)
                     .fill(.white.opacity(0.35))
-                    .frame(width: 46, height: 5)
-                    .padding(.bottom, 4)
+                    .frame(width: 44, height: 5)
+                    .padding(.bottom, 4)               // sits in the chin, clear of the notch
             }
     }
 
