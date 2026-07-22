@@ -54,6 +54,35 @@ final class ModuleRegistryTests: XCTestCase {
         XCTAssertTrue(core.liveSourceIDs.contains(SourceID(raw: "a")))
     }
 
+    func test_reload_rebuildsActiveSource() async {
+        let core = makeCore()
+        var builds = 0
+        let reg = ModuleRegistry(core: core, store: InMemoryModuleStore())
+        reg.add(Module(id: SourceID(raw: "a"), displayName: "A", icon: .symbol("gear"),
+                       makeSource: { builds += 1; return SpySource("a") }))
+        reg.start()                                    // builds == 1
+
+        await reg.reload(SourceID(raw: "a"))           // builds == 2 (fresh, re-reads config)
+
+        XCTAssertEqual(builds, 2)
+        XCTAssertTrue(core.liveSourceIDs.contains(SourceID(raw: "a")))
+        XCTAssertTrue(reg.isEnabled(SourceID(raw: "a")), "reload doesn't change on/off")
+    }
+
+    func test_reload_disabledModule_isNoop() async {
+        let core = makeCore()
+        var builds = 0
+        let reg = ModuleRegistry(core: core, store: InMemoryModuleStore([SourceID(raw: "a")]))
+        reg.add(Module(id: SourceID(raw: "a"), displayName: "A", icon: .symbol("gear"),
+                       makeSource: { builds += 1; return SpySource("a") }))
+        reg.start()                                    // builds == 0 (disabled)
+
+        await reg.reload(SourceID(raw: "a"))           // still nothing to rebuild
+
+        XCTAssertEqual(builds, 0)
+        XCTAssertFalse(core.liveSourceIDs.contains(SourceID(raw: "a")))
+    }
+
     func test_persistedOff_survivesANewRegistry() {
         let core = makeCore()
         let store = InMemoryModuleStore([SourceID(raw: "a")])   // previously disabled

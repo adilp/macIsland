@@ -54,6 +54,18 @@ public final class ModuleRegistry {
         }
     }
 
+    /// Rebuild an *enabled* module's live source from scratch — the same teardown as a
+    /// disable-then-enable, but without touching the persisted on/off. For a module whose
+    /// configuration changed under it (e.g. a new repo entered in Settings): `activate()`
+    /// re-reads that config, so the fresh source watches the new target. No-op if the
+    /// module is unknown or currently disabled (a disabled module rebuilds on next enable).
+    public func reload(_ id: SourceID) async {
+        guard let module = defined.first(where: { $0.id == id }), active[id] != nil else { return }
+        active[id] = nil
+        await core.unregister(id, revokingCards: true)
+        enable(module)
+    }
+
     /// The per-row display status: ⚪ when off, else the live source's own 🟢/🟡.
     public func status(of id: SourceID) -> ModuleDisplayStatus {
         guard let a = active[id] else { return .disabled }
