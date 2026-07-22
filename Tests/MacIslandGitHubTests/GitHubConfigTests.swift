@@ -26,6 +26,43 @@ final class GitHubConfigTests: XCTestCase {
         XCTAssertFalse(cfg.matchesWorkflow(named: "Lint"))
     }
 
+    // MARK: - Repository parsing
+
+    func test_parseRepository_ownerSlashRepo() {
+        let r = GitHubConfig.parseRepository("SignalVote/SignalVote")
+        XCTAssertEqual(r?.owner, "SignalVote")
+        XCTAssertEqual(r?.repo, "SignalVote")
+    }
+
+    func test_parseRepository_fullHTTPSURL() {
+        let r = GitHubConfig.parseRepository("https://github.com/octocat/Hello-World")
+        XCTAssertEqual(r?.owner, "octocat")
+        XCTAssertEqual(r?.repo, "Hello-World")
+    }
+
+    func test_parseRepository_stripsDotGitAndTrailingPath() {
+        XCTAssertEqual(GitHubConfig.parseRepository("https://github.com/octocat/Hello-World.git")?.repo, "Hello-World")
+        let deep = GitHubConfig.parseRepository("https://github.com/octocat/Hello-World/actions/runs")
+        XCTAssertEqual(deep?.owner, "octocat")
+        XCTAssertEqual(deep?.repo, "Hello-World")
+    }
+
+    func test_parseRepository_sshForm() {
+        let r = GitHubConfig.parseRepository("git@github.com:octocat/Hello-World.git")
+        XCTAssertEqual(r?.owner, "octocat")
+        XCTAssertEqual(r?.repo, "Hello-World")
+    }
+
+    func test_parseRepository_trimsWhitespace() {
+        XCTAssertEqual(GitHubConfig.parseRepository("  octocat/Hello-World  ")?.owner, "octocat")
+    }
+
+    func test_parseRepository_rejectsIncomplete() {
+        XCTAssertNil(GitHubConfig.parseRepository("octocat"))
+        XCTAssertNil(GitHubConfig.parseRepository(""))
+        XCTAssertNil(GitHubConfig.parseRepository("https://github.com/octocat"))
+    }
+
     // MARK: - isComplete
 
     func test_isComplete_requiresOwnerAndRepo() {

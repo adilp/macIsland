@@ -6,7 +6,7 @@ import MacIslandCore
 /// connections. Pull-model: statuses are read on appear and after each interaction — no
 /// background work, so the idle quiescence budget (`PERFORMANCE.md`) is untouched.
 struct ModulesMenu: View {
-    let registry: ModuleRegistry
+    @ObservedObject var registry: ModuleRegistry
     let core: IslandCore
     @Environment(\.openSettings) private var openSettings
     /// Bumped after a toggle/action to re-read the pulled state (the menu is short-lived,
@@ -65,8 +65,14 @@ struct ModulesMenu: View {
                         .buttonStyle(.link)
                 }
                 if ModuleSettingsPanels.hasPanel(module.id) {
-                    Button("Settings…") { openSettings() }
-                        .buttonStyle(.link)
+                    Button("Settings…") {
+                        // We're an `.accessory` app (no Dock icon, never the active app), so the
+                        // Settings window opens *behind* everything and looks like nothing happened.
+                        // Activate first so it comes to the front.
+                        NSApp.activate(ignoringOtherApps: true)
+                        openSettings()
+                    }
+                    .buttonStyle(.link)
                 }
             }
         }

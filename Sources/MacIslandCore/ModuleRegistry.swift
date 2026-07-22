@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 /// The Modules manager: owns the module definitions, remembers on/off across launches
 /// (via the injected `ModuleStore`), and drives `IslandCore` registration. The one place
@@ -7,8 +8,12 @@ import Foundation
 ///
 /// It does **no** background work — no timers, no polling. Status is pulled on demand (the
 /// menu reads it on open), so it's quiescent at idle by construction (`PERFORMANCE.md`).
+///
+/// `ObservableObject` only so the menu re-renders when the *set* of live modules changes
+/// (a toggle, or a `reload` after a settings save) — health itself is still pulled on read,
+/// never pushed, so this adds no background work.
 @MainActor
-public final class ModuleRegistry {
+public final class ModuleRegistry: ObservableObject {
     private let core: IslandCore
     private let store: any ModuleStore
     private var defined: [Module] = []
@@ -40,6 +45,7 @@ public final class ModuleRegistry {
     /// cards (off means gone). Persists the new state either way. Idempotent.
     public func setEnabled(_ id: SourceID, _ on: Bool) async {
         guard let module = defined.first(where: { $0.id == id }) else { return }
+        objectWillChange.send()
         if on {
             disabled.remove(id)
             store.setDisabled(disabled)
@@ -61,6 +67,7 @@ public final class ModuleRegistry {
     /// module is unknown or currently disabled (a disabled module rebuilds on next enable).
     public func reload(_ id: SourceID) async {
         guard let module = defined.first(where: { $0.id == id }), active[id] != nil else { return }
+        objectWillChange.send()
         active[id] = nil
         await core.unregister(id, revokingCards: true)
         enable(module)

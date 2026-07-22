@@ -3,19 +3,20 @@ import MacIslandCore
 import MacIslandGitHub
 
 /// The GitHub module's settings panel — the reference example of the `ModuleSettingsPanels`
-/// opt-in hook. Point the module at *your* repo: owner, repo, branch, and an optional
-/// workflow-name filter. Saving persists the config and `reload`s the module so a fresh
+/// opt-in hook. Point the module at *your* repo, then an optional branch and workflow-name
+/// filter. Saving persists the config and `reload`s the module so a fresh
 /// `GitHubActionsSource` starts watching the new target immediately.
 ///
-/// No token field: auth comes from the user's own `gh` login (`gh auth token`), pulled
-/// live and never stored — so nothing secret lives here or on disk.
+/// The repository field is forgiving: paste a browser URL or type `owner/repo` — both parse
+/// (see `GitHubConfig.parseRepository`). No token field: auth comes from the user's own `gh`
+/// login (`gh auth token`), pulled live and never stored — nothing secret lives here or on disk.
 struct GitHubSettingsView: View {
     let registry: ModuleRegistry
 
-    @State private var owner = ""
-    @State private var repo = ""
+    @State private var repoInput = ""       // "owner/repo" or a full GitHub URL
     @State private var branch = "main"
     @State private var filter = ""          // comma-separated workflow-name substrings
+    @State private var error: String?
     @State private var saved = false
 
     private let store = UserDefaultsGitHubConfigStore()
@@ -23,14 +24,18 @@ struct GitHubSettingsView: View {
     var body: some View {
         Form {
             Section {
-                TextField("Owner", text: $owner, prompt: Text("octocat"))
-                TextField("Repository", text: $repo, prompt: Text("Hello-World"))
+                TextField("Repository", text: $repoInput,
+                          prompt: Text("owner/repo  ·  or  https://github.com/owner/repo"))
                 TextField("Branch", text: $branch, prompt: Text("main"))
             } header: {
                 Text("Repository")
             } footer: {
-                Text("The GitHub repo whose Actions runs appear on the island.")
-                    .font(.caption).foregroundStyle(.secondary)
+                if let error {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                } else {
+                    Text("The GitHub repo whose Actions runs appear on the island.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
 
             Section {
@@ -44,7 +49,7 @@ struct GitHubSettingsView: View {
                 HStack {
                     Button("Save") { save() }
                         .keyboardShortcut(.defaultAction)
-                        .disabled(!isComplete)
+                        .disabled(repoInput.trimmingCharacters(in: .whitespaces).isEmpty)
                     if saved {
                         Label("Saved", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green).font(.caption)
@@ -57,35 +62,36 @@ struct GitHubSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 420, minHeight: 300)
+        .frame(minWidth: 440, minHeight: 320)
         .onAppear(perform: load)
-    }
-
-    private var isComplete: Bool {
-        !owner.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !repo.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private func load() {
         guard let config = store.load() else { return }
-        owner = config.owner
-        repo = config.repo
+        repoInput = "\(config.owner)/\(config.repo)"
         branch = config.branch
         filter = config.workflowFilter.joined(separator: ", ")
     }
 
     private func save() {
+        guard let parsed = GitHubConfig.parseRepository(repoInput) else {
+            error = "Enter a repository as owner/repo or a github.com URL."
+            saved = false
+            return
+        }
+        error = nil
+        let trimmedBranch = branch.trimmingCharacters(in: .whitespaces)
         let config = GitHubConfig(
-            owner: owner.trimmingCharacters(in: .whitespaces),
-            repo: repo.trimmingCharacters(in: .whitespaces),
-            branch: branch.trimmingCharacters(in: .whitespaces).isEmpty
-                ? "main" : branch.trimmingCharacters(in: .whitespaces),
+            owner: parsed.owner,
+            repo: parsed.repo,
+            branch: trimmedBranch.isEmpty ? "main" : trimmedBranch,
             workflowFilter: filter
                 .split(separator: ",")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
         )
         store.save(config)
+        repoInput = "\(config.owner)/\(config.repo)"   // reflect the normalized form
         saved = true
         // Rebuild the live module against the new repo (or park it if cleared).
         Task { await registry.reload(SourceID(raw: "github")) }

@@ -32,6 +32,25 @@ public struct GitHubConfig: Codable, Equatable, Sendable {
         workflowFilter.isEmpty ||
         workflowFilter.contains { name.range(of: $0, options: .caseInsensitive) != nil }
     }
+
+    /// Parse a user-typed repository reference into `(owner, repo)`. Forgiving on purpose —
+    /// people paste a browser URL as readily as they type `owner/repo`. Accepts `owner/repo`,
+    /// `https://github.com/owner/repo` (with an optional `.git` or trailing path), and the
+    /// SSH form `git@github.com:owner/repo`. Returns nil if it can't find both parts.
+    public static func parseRepository(_ input: String) -> (owner: String, repo: String)? {
+        var s = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["https://github.com/", "http://github.com/", "github.com/", "git@github.com:"]
+        where s.hasPrefix(prefix) {
+            s = String(s.dropFirst(prefix.count)); break
+        }
+        let parts = s.split(separator: "/").map(String.init)
+        guard parts.count >= 2 else { return nil }
+        let owner = parts[0]
+        var repo = parts[1]
+        if repo.hasSuffix(".git") { repo = String(repo.dropLast(4)) }
+        guard !owner.isEmpty, !repo.isEmpty else { return nil }
+        return (owner, repo)
+    }
 }
 
 /// The persistence seam for the GitHub module's `GitHubConfig` — injected like
