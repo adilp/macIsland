@@ -258,4 +258,113 @@ final class CalendarSourceTests: XCTestCase {
         XCTAssertEqual(cards(sys.core).count, 1)
         XCTAssertEqual(cards(sys.core)[0].id.value, "1")
     }
+
+    // MARK: - In-progress meetings: a Join card for a meeting already underway
+    //
+    // A meeting whose T-1 fired while the Mac slept is missed by the timer path (spec:
+    // the missing-banner gap). So on any refresh — launch, calendar edit, or wake — a
+    // meeting that is *currently underway* (startDate ≤ now < endDate) and joinable
+    // (has a video link) gets a **silent, sticky Join card** so it can be joined without
+    // hunting through Calendar. Surfaced at most once per meeting so a dismissal sticks
+    // and repeated wakes don't nag.
+
+    /// A meeting that began 10 minutes ago and runs another 20 — in progress at fetch.
+    private func inProgressVideoMeeting(id: String = "live", title: String = "Design")
+    -> MeetingEvent {
+        let start = TestClock().now().addingTimeInterval(-600)   // started 10 min ago
+        return .make(id: id, title: title, start: start, durationMinutes: 30, videoLink: VideoLink.meet)
+    }
+
+    func test_inProgressVideoMeeting_postsSilentStickyJoinCard() async {
+        let sys = makeSystem([inProgressVideoMeeting()])
+        await sys.store.awaitFetch()
+
+        XCTAssertEqual(cards(sys.core).count, 1)
+        let card = cards(sys.core)[0]
+        XCTAssertEqual(card.id, calID("live"))
+        XCTAssertEqual(card.content.title, "Design")
+        XCTAssertEqual(card.content.body, "in progress · Work")
+        XCTAssertEqual(card.content.icon, .symbol("video.fill"))
+        XCTAssertEqual(card.presence, .sticky)
+        XCTAssertEqual(card.alerting, .silent, "already-underway: appears, never rings")
+        XCTAssertEqual(card.actions.count, 1)
+        XCTAssertEqual(card.actions[0].label, "Join Meet")
+        XCTAssertEqual(card.actions[0].behavior, .openURL(VideoLink.meet.url))
+        XCTAssertTrue(card.actions[0].dismissOnTap)
+        XCTAssertFalse(sys.audio.ringing)
+        XCTAssertEqual(sys.audio.playOnceCount, 0, "silent: no arrival chime either")
+    }
+
+    func test_inProgressNonVideoMeeting_postsNothing() async {
+        let start = TestClock().now().addingTimeInterval(-600)
+        let sys = makeSystem([.make(id: "nv", start: start, durationMinutes: 30, videoLink: nil)])
+        await sys.store.awaitFetch()
+
+        XCTAssertTrue(cards(sys.core).isEmpty, "an underway meeting with no join link has nothing to show")
+        XCTAssertEqual(sys.audio.startCount, 0)
+    }
+
+    func test_inProgressCard_notDuplicatedOrRealerted_onRepeatedRefresh() async {
+        let sys = makeSystem([inProgressVideoMeeting()])
+        await sys.store.awaitFetch()
+        XCTAssertEqual(cards(sys.core).count, 1)
+
+        // Two more refreshes (a calendar edit, then a wake) with the same live meeting.
+        sys.store.triggerChange()
+        sys.store.triggerChange()
+
+        XCTAssertEqual(cards(sys.core).count, 1, "surfaced once — no duplicate on later refreshes")
+        XCTAssertEqual(sys.audio.playOnceCount, 0)
+        XCTAssertFalse(sys.audio.ringing)
+    }
+
+    func test_inProgressCard_dismissed_staysDismissedAcrossRefresh() async {
+        let sys = makeSystem([inProgressVideoMeeting()])
+        await sys.store.awaitFetch()
+        XCTAssertEqual(cards(sys.core).count, 1)
+
+        await sys.core.dismiss(calID("live"))
+        XCTAssertTrue(cards(sys.core).isEmpty)
+
+        // Another wake / calendar edit while the meeting is still underway.
+        sys.store.triggerChange()
+
+        XCTAssertTrue(cards(sys.core).isEmpty, "a dismissed in-progress card does not silently return")
+    }
+
+    func test_liveT1RingingCard_notDowngraded_byInProgressRefresh() async {
+        // The awake path already rang the T-1 Join card at the meeting's start; a later
+        // refresh must not replace that live ringing card with the silent in-progress one.
+        let clock = TestClock()
+        let start = clock.now().addingTimeInterval(600)
+        let sys = makeSystem([.make(id: "vid", start: start, durationMinutes: 30, videoLink: VideoLink.meet)])
+        await sys.store.awaitFetch()
+
+        await sys.clock.advance(by: .seconds(540))   // → T-1: ringing "starting now"
+        XCTAssertTrue(sys.audio.ringing)
+        await sys.clock.advance(by: .seconds(90))     // → start + 30s: underway, still ringing
+
+        sys.store.triggerChange()                     // wake/edit refresh while underway
+
+        XCTAssertEqual(cards(sys.core).count, 1)
+        let card = cards(sys.core)[0]
+        XCTAssertEqual(card.content.body, "starting now", "the live T-1 card is left intact")
+        XCTAssertEqual(card.alerting, .ringing())
+        XCTAssertTrue(sys.audio.ringing, "its ring keeps going")
+    }
+
+    func test_inProgressCard_revokedWhenMeetingVanishes_andResurfacesIfItReturns() async {
+        let live = inProgressVideoMeeting()
+        let sys = makeSystem([live])
+        await sys.store.awaitFetch()
+        XCTAssertEqual(cards(sys.core).count, 1)
+
+        sys.store.triggerChange(meetings: [])         // meeting removed from the calendar
+        XCTAssertTrue(cards(sys.core).isEmpty, "a vanished in-progress meeting's card is revoked")
+
+        // It comes back still underway → surfaces again (proof the id was cleared on revoke).
+        sys.store.triggerChange(meetings: [live])
+        XCTAssertEqual(cards(sys.core).count, 1, "a returned in-progress meeting resurfaces")
+        XCTAssertEqual(cards(sys.core)[0].content.body, "in progress · Work")
+    }
 }

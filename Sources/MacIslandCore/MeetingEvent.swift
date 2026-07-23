@@ -44,6 +44,11 @@ public struct MeetingEvent: Equatable, Sendable, Identifiable {
     /// Whether this meeting has a joinable video link — the T-1/ring gate.
     public var hasVideoLink: Bool { videoLink != nil }
 
+    /// Whether the meeting is happening right now — started, not yet ended
+    /// (`startDate <= now < endDate`). The gate for surfacing an underway Join card when a
+    /// start was missed across sleep (spec §3).
+    public func isUnderway(at now: Date) -> Bool { startDate <= now && now < endDate }
+
     /// Static relative-time text for `Content.body` (spec §4: "static relative-time
     /// text, never a live countdown"). Computed once at post time from the injected
     /// clock's `now`, so it costs nothing and never re-posts per tick. Ported from the

@@ -1,5 +1,6 @@
 import Foundation
 import EventKit
+import AppKit
 
 /// The production `MeetingStore` — the **only** EventKit-importing file (Calendar spec
 /// §7). It is to `CalendarEngine` what `SystemClock` is to `Clock` and `SystemAudioOutput`
@@ -18,6 +19,7 @@ public final class EventKitStore: MeetingStore {
     // error; `nonisolated(unsafe)` vouches for its thread-safety and compiles on every SDK.
     private nonisolated(unsafe) let store = EKEventStore()
     private var observer: NSObjectProtocol?
+    private var wakeObserver: NSObjectProtocol?
 
     public init() {}
 
@@ -54,11 +56,23 @@ public final class EventKitStore: MeetingStore {
             // Delivered on the main queue; hop to the main actor to call the engine.
             Task { @MainActor in onChange() }
         }
+        // Waking from sleep is the other moment the meeting set must be re-evaluated: a T-1
+        // timer that should have fired while asleep was missed (the core's one-shots run on
+        // the suspend-aware uptime clock, which pauses during sleep), and an already-underway
+        // meeting needs its Join card surfaced on lid-open. Wake posts on NSWorkspace's own
+        // notification centre, not `NotificationCenter.default`.
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in onChange() }
+        }
     }
 
     public func stopObserving() {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
+        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
+        wakeObserver = nil
     }
 }
 

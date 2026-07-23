@@ -7,6 +7,11 @@ enum Moment: Equatable, Sendable {
     case early
     /// T-1: imminent, for video-link meetings only.
     case imminent
+    /// Already underway: a meeting whose start slipped past — typically because the T-1
+    /// timer was missed while the Mac slept — but which hasn't ended yet. Surfaced as a
+    /// silent Join card (video-link meetings only) so it can be joined without hunting
+    /// through Calendar. The missing-banner recovery.
+    case inProgress
 }
 
 /// The reshaped `CalendarService` (Calendar spec §7) — the pure timing engine behind
@@ -43,6 +48,12 @@ final class CalendarEngine {
     /// The event ids seen in the last fetch — diffed against a fresh fetch to detect a
     /// vanished meeting (deleted, or moved out of the window) and revoke its card.
     private var knownEventIDs: Set<String> = []
+    /// The ids of meetings we've already surfaced a Join card for — the T-1 ring or the
+    /// in-progress silent card. Guards a *refresh* (calendar edit or wake) against
+    /// double-posting, against downgrading a live ring to the silent variant, and against
+    /// reviving a card the user dismissed. An entry lives from the first Join-card post
+    /// until that meeting's card is revoked (endDate reached, or the meeting vanished).
+    private var joinCardPosted: Set<String> = []
 
     init(store: any MeetingStore, clock: any Clock) {
         self.store = store
@@ -89,6 +100,7 @@ final class CalendarEngine {
         for t in endTimers.values { t.cancel() }
         endTimers.removeAll()
         knownEventIDs.removeAll()
+        joinCardPosted.removeAll()
     }
 
     /// The user acknowledged a meeting's T-5 warning (dismiss/act) — cancel its pending
@@ -130,7 +142,14 @@ final class CalendarEngine {
     /// the respective window — verbatim to the reference's timing (spec §3).
     private func scheduleWarnings(_ meeting: MeetingEvent, now: Date) {
         let untilStart = meeting.startDate.timeIntervalSince(now)
-        guard untilStart > 0 else { return }   // already started — nothing to warn about
+
+        // Already underway (start slipped past — usually a timer missed across sleep): no
+        // warning left to arm, but a joinable meeting that hasn't ended is surfaced once as
+        // a silent Join card so it can be joined without hunting in Calendar (spec §3).
+        guard untilStart > 0 else {
+            if meeting.isUnderway(at: now), meeting.hasVideoLink { fireJoinCard(meeting, .inProgress) }
+            return
+        }
 
         // T-5, for every meeting.
         let t5 = untilStart - 300
@@ -144,10 +163,20 @@ final class CalendarEngine {
         guard meeting.hasVideoLink else { return }
         let t1 = untilStart - 60
         if t1 > 0 {
-            arm(meeting.id + "-T1", after: .seconds(t1)) { [weak self] in self?.onFire?(meeting, .imminent) }
+            arm(meeting.id + "-T1", after: .seconds(t1)) { [weak self] in self?.fireJoinCard(meeting, .imminent) }
         } else {
-            onFire?(meeting, .imminent)         // inside the 1-min window → fire now
+            fireJoinCard(meeting, .imminent)    // inside the 1-min window → fire now
         }
+    }
+
+    /// Post a Join card once — the T-1 ring (`.imminent`) or the underway silent card
+    /// (`.inProgress`) — recording the meeting in `joinCardPosted`. The guard is what makes
+    /// a later refresh idempotent: it won't re-ring, won't downgrade a live ring to the
+    /// silent variant, and won't revive a dismissed card. Reset when the card is revoked.
+    private func fireJoinCard(_ meeting: MeetingEvent, _ moment: Moment) {
+        guard !joinCardPosted.contains(meeting.id) else { return }
+        joinCardPosted.insert(meeting.id)
+        onFire?(meeting, moment)
     }
 
     /// Arm the leftover sticky card's self-revoke at `endDate` (video meetings only —
@@ -176,6 +205,7 @@ final class CalendarEngine {
     private func revoke(_ eventId: String) {
         endTimers[eventId]?.cancel()
         endTimers[eventId] = nil
+        joinCardPosted.remove(eventId)   // its card is gone — a future occurrence may resurface
         onRevoke?(eventId)
     }
 

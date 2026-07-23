@@ -87,20 +87,33 @@ public final class CalendarSource: NotificationSource {
         case .imminent:
             // T-1 — imminent, video only: the same id upserts the T-5 into a persistent
             // ringing Join card the core opens itself.
-            guard let link = meeting.videoLink else { return }
-            handle?.post(Notification(
-                id: NotificationID(source: id, value: meeting.id),
-                content: Content(
-                    title: meeting.title,
-                    body: "starting now",
-                    icon: .symbol("video.fill"),
-                    tint: meeting.tint),
-                actions: [Action(
-                    label: "Join \(link.type.displayName)",
-                    behavior: .openURL(link.url),
-                    dismissOnTap: true)],
-                presence: .sticky,
-                alerting: .ringing()))
+            postJoinCard(meeting, body: "starting now", alerting: .ringing())
+
+        case .inProgress:
+            // Already underway (a start missed across sleep): the same sticky Join card,
+            // but silent and honestly labelled — it appears so the meeting can be joined,
+            // without an incoming-call ring for something that began minutes ago.
+            postJoinCard(meeting, body: "in progress · \(meeting.calendarName)", alerting: .silent)
         }
+    }
+
+    /// The sticky Join card for a video meeting — shared by the T-1 ring and the underway
+    /// silent variant, which differ only in body text and sound level. No-op for a meeting
+    /// without a parseable link (nothing to join).
+    private func postJoinCard(_ meeting: MeetingEvent, body: String, alerting: Alerting) {
+        guard let link = meeting.videoLink else { return }
+        handle?.post(Notification(
+            id: NotificationID(source: id, value: meeting.id),
+            content: Content(
+                title: meeting.title,
+                body: body,
+                icon: .symbol("video.fill"),
+                tint: meeting.tint),
+            actions: [Action(
+                label: "Join \(link.type.displayName)",
+                behavior: .openURL(link.url),
+                dismissOnTap: true)],
+            presence: .sticky,
+            alerting: alerting))
     }
 }
